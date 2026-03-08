@@ -22,7 +22,7 @@ def main():
 
     # --- 2. DATALOADERS ---
     train_loader, val_loader, test_loader, classes = get_dataloaders(
-        train_dir, val_dir, test_dir, img_size=128, batch_size=16)
+        train_dir, val_dir, test_dir, img_size=128, batch_size=32)
 
     # --- 3. PHASE 1: RESNET BASELINE ---
     model_p1, hist_p1, ckpt_p1 = train_resnet(
@@ -33,7 +33,7 @@ def main():
 
     # --- 4. WGAN-GP TRAINING ---
     gan_loader, gan_classes = get_gan_dataloader(
-        train_dir, img_size=128, batch_size=64)
+        train_dir, img_size=128, batch_size=128)
     
     G = Generator(nz=100, n_class=2, nc=1, d=128).to(device)
     D = Critic(nc=1, n_class=2, d=128).to(device)
@@ -76,7 +76,7 @@ def main():
 
     # --- 6. PHASE 3: RESNET AUGMENTED ---
     aug_train_loader, _, _, _ = get_dataloaders(
-        aug_train_dir, val_dir, test_dir, img_size=128, batch_size=16)
+        aug_train_dir, val_dir, test_dir, img_size=128, batch_size=32)
     
     model_p3, hist_p3, ckpt_p3 = train_resnet(
         aug_train_loader, val_loader, device, epochs=5, lr=0.001, tag="Phase3")
@@ -86,7 +86,7 @@ def main():
 
     # --- 7. CONFRONTO FINALE ---
     plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p3)
-    print("\n✅ Pipeline completata con successo!")
+    print("\n Pipeline completata con successo!")
 
 if __name__ == '__main__':
     main()
