@@ -5,11 +5,12 @@ from sklearn.metrics import classification_report, confusion_matrix
 import os
 from torchvision import transforms
 
-def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Phase1"):
+def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Phase1", out_dir='./results'):
     """
-    Valuta il modello sul test set e salva i grafici in locale.
+    Valuta il modello sul test set e salva i grafici e le metriche in `out_dir`.
     Restituisce il classification report e la confusion matrix.
     """
+    os.makedirs(out_dir, exist_ok=True)
     model.load_state_dict(torch.load(ckpt_path))
     model = model.to(device)
     model.eval()
@@ -23,10 +24,16 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
             all_labels.extend(y.cpu().numpy())
 
     print(f"\n{'='*50}\nRISULTATI {tag}\n{'='*50}")
-    report = classification_report(all_labels, all_preds,
-                                   target_names=class_names, output_dict=True)
-    print(classification_report(all_labels, all_preds, target_names=class_names))
+    report_dict = classification_report(all_labels, all_preds, target_names=class_names, output_dict=True)
+    report_str = classification_report(all_labels, all_preds, target_names=class_names)
+    print(report_str)
 
+    # Salva il report in formato testuale
+    with open(os.path.join(out_dir, f'report_{tag}.txt'), 'w') as f:
+        f.write(f"RISULTATI {tag}\n{'='*50}\n")
+        f.write(report_str)
+
+    # Plot e salvataggio Confusion Matrix
     cm = confusion_matrix(all_labels, all_preds)
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -35,10 +42,10 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
     ax.set_ylabel('True')
     ax.set_title(f'Confusion Matrix — {tag}')
     plt.tight_layout()
-    plt.savefig(f'cm_{tag}.png')
-    plt.show()
+    plt.savefig(os.path.join(out_dir, f'cm_{tag}.png'))
+    plt.close(fig) # Non usiamo plt.show() in esecuzione batch su server
 
-    return report, cm
+    return report_dict, cm
 
 def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class, device, syn_dir='synthetic_images'):
     """
@@ -76,28 +83,38 @@ def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class,
             print(f"  {cls_name}: generate {num_gen} immagini sintetiche")
     print("Generazione completata! ✅")
 
-def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p3):
+def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p3, out_dir='./results'):
     """
     Stampa le metriche a confronto e plotta le curve e matrici side-by-side.
+    Salva i plot e il report finale in `out_dir`.
     """
-    print("\n" + "=" * 60)
-    print("CONFRONTO FINAL: Phase 1 (Baseline) vs Phase 3 (Augmented)")
-    print("=" * 60)
+    os.makedirs(out_dir, exist_ok=True)
+    
+    comp_text = []
+    comp_text.append("\n" + "=" * 60)
+    comp_text.append("CONFRONTO FINALE: Phase 1 (Baseline) vs Phase 3 (Augmented)")
+    comp_text.append("=" * 60)
 
     metrics = ['precision', 'recall', 'f1-score']
     for cls in classes:
-        print(f"\n  {cls}:")
+        comp_text.append(f"\n  {cls}:")
         for m in metrics:
             v1 = report_p1[cls][m]
             v3 = report_p3[cls][m]
             diff = v3 - v1
             arrow = "↑" if diff > 0 else "↓" if diff < 0 else "="
-            print(f"    {m:12s}: {v1:.4f} → {v3:.4f}  ({arrow} {abs(diff):.4f})")
+            comp_text.append(f"    {m:12s}: {v1:.4f} → {v3:.4f}  ({arrow} {abs(diff):.4f})")
 
     acc_p1, acc_p3 = report_p1['accuracy'], report_p3['accuracy']
     diff_acc = acc_p3 - acc_p1
     arrow = "↑" if diff_acc > 0 else "↓"
-    print(f"\n  Overall Acc: {acc_p1:.4f} → {acc_p3:.4f}  ({arrow} {abs(diff_acc):.4f})")
+    comp_text.append(f"\n  Overall Acc: {acc_p1:.4f} → {acc_p3:.4f}  ({arrow} {abs(diff_acc):.4f})")
+
+    full_output = "\n".join(comp_text)
+    print(full_output)
+    
+    with open(os.path.join(out_dir, 'comparison_report.txt'), 'w') as f:
+        f.write(full_output)
 
     # Plot confronto curve
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -109,8 +126,8 @@ def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p
         axes[i].grid(True)
     plt.suptitle('Phase 1 vs Phase 3 — Training Curves', fontsize=14)
     plt.tight_layout()
-    plt.savefig('comparison_p1_vs_p3.png')
-    plt.show()
+    plt.savefig(os.path.join(out_dir, 'comparison_p1_vs_p3.png'))
+    plt.close(fig)
 
     # Matrici
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
@@ -120,5 +137,5 @@ def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p
     ax2.set_title('Phase 3 (Augmented)')
     plt.suptitle('Confusion Matrix Comparison', fontsize=14)
     plt.tight_layout()
-    plt.savefig('cm_comparison.png')
-    plt.show()
+    plt.savefig(os.path.join(out_dir, 'cm_comparison.png'))
+    plt.close(fig)

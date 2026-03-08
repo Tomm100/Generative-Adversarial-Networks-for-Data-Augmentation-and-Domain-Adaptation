@@ -24,16 +24,20 @@ def main():
     train_loader, val_loader, test_loader, classes = get_dataloaders(
         train_dir, val_dir, test_dir, img_size=128, batch_size=32)
 
+    # Creazione cartella per i risultati finali (metriche e plot)
+    results_dir = 'evaluation_results'
+    os.makedirs(results_dir, exist_ok=True)
+
     # --- 3. PHASE 1: RESNET BASELINE ---
     model_p1, hist_p1, ckpt_p1 = train_resnet(
         train_loader, val_loader, device, epochs=5, lr=0.001, tag="Phase1")
     
     report_p1, cm_p1 = evaluate_on_test(
-        model_p1, ckpt_p1, test_loader, classes, device, tag="Phase1")
+        model_p1, ckpt_p1, test_loader, classes, device, tag="Phase1", out_dir=results_dir)
 
     # --- 4. WGAN-GP TRAINING ---
     gan_loader, gan_classes = get_gan_dataloader(
-        train_dir, img_size=128, batch_size=128)
+        train_dir, img_size=128, batch_size=64)
     
     G = Generator(nz=100, n_class=2, nc=1, d=128).to(device)
     D = Critic(nc=1, n_class=2, d=128).to(device)
@@ -82,10 +86,17 @@ def main():
         aug_train_loader, val_loader, device, epochs=5, lr=0.001, tag="Phase3")
     
     report_p3, cm_p3 = evaluate_on_test(
-        model_p3, ckpt_p3, test_loader, classes, device, tag="Phase3")
+        model_p3, ckpt_p3, test_loader, classes, device, tag="Phase3", out_dir=results_dir)
 
     # --- 7. CONFRONTO FINALE ---
-    plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p3)
+    plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p3, out_dir=results_dir)
+
+    # Copia tutti i risultati su Google Drive
+    drive_results_dir = '/content/drive/MyDrive/ProgettoMLVM/evaluation_results'
+    if os.path.exists(drive_results_dir): shutil.rmtree(drive_results_dir)
+    shutil.copytree(results_dir, drive_results_dir)
+    print(f"\n📊 Tutti i grafici e le metriche sono stati salvati su Drive in: {drive_results_dir}")
+
     print("\n Pipeline completata con successo!")
 
 if __name__ == '__main__':
