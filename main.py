@@ -65,6 +65,12 @@ def main():
     print(f"  Gap da colmare: {num_gen_normal} NORMAL sintetiche")
     generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz=100, n_class=2, device=device, syn_dir=syn_dir)
 
+    # Copia TUTTE le immagini sintetiche generate su Google Drive
+    drive_syn_dir = '/content/drive/MyDrive/ProgettoMLVM/generated_synthetic_images'
+    if os.path.exists(drive_syn_dir): shutil.rmtree(drive_syn_dir)
+    shutil.copytree(syn_dir, drive_syn_dir)
+    print(f"Salvate le {num_gen_normal} immagini sintetiche in: {drive_syn_dir}")
+
     # Crea cartella dataset augmented
     aug_dir = 'augmented_dataset'
     aug_train_dir = os.path.join(aug_dir, 'train')
