@@ -45,7 +45,7 @@ def main():
     # Cartella locale dove salvare i sample durante il training
     gan_samples_dir = 'gan_training_samples'
 
-    # Allenamento GAN (modifica le epoche a 5 o 10 per un test veloce)
+    # Allenamento GAN
     G, ckpt_gan = train_wgangp(
         G, D, gan_loader, device, compute_gp, 
         epochs=100, lr=0.0001, n_critic=5, nz=100, n_class=2, out_dir=gan_samples_dir)

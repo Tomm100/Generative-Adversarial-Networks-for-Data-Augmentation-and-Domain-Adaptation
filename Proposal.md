@@ -33,3 +33,38 @@
 | **F1-Score** |
 
 A **Confusion Matrix** will also be used as a diagnostic tool to provide a detailed breakdown of classification errors per class.
+
+
+Certo, va benissimo anche via mail. Le allego dunque quali sono i miei dubbi a riguardo
+
+1) Posso utilizzare come classificatore una ResNet18 pre-addestrata su ImageNet?
+
+Per quanto riguarda la validazione durante il training, quale metrica mi conviene guardare oltre alla loss per scegliere l'epoca migliore? 
+
+2) Ho scelto il dataset chest x-ray pneumonia (https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia). Questo è composto nel seguente modo:
+- train: 5216 immagini (3875 PNEUMONIA, 1341 NORMAL)
+- val: 16 immagini (8 PNEUMONIA, 8 NORMAL)
+- test: 624 immagini (390 PNEUMONIA, 234 NORMAL)
+
+Lo split di validazione è sufficiente? Oppure devo splittare da una parte del train per creare un validation set più grande? e in tal caso, questo split non deve essere usato per addestrare la GAN, corretto?
+
+Nella traccia viene specificato che il dataset dev'essere ridotto/sbilanciato. Questo è leggermente sbilanciato, ma non so se sia sufficiente. Inoltre è corretto che la classe negativa(Normal) sia quella minoritaria?
+
+3) Per quanto riguarda la GAN, ho pensato di utilizzare una WGAN-GP con le seguenti caratteristiche:
+- Conditional on class label
+- 6 conv layers
+- Outputs 128x128 grayscale images
+
+È una buona scelta? Oppure mi consiglia di utilizzare un'altra architettura?
+
+Per valutare la qualità delle immagini prodotte dal GAN, pensavo di addestrare il classificatore sulle immagini sintetiche del gan ed utilizzare il test set composto da immagini reali. È una strategia corretta o mi consiglia altre metriche per valuare le immagini del gan?
+
+Nel caso in cui l'augmentation non porti a miglioramenti significativi, ha senso testare su quale percentuale del dataset (es prendendo solo il 20-30% del dataset originale) si ottengono miglioramenti? (la gan però sarebbe sempre addestrata su tutto il dataset, in quanto il 20-30% del dataset originale non sarebbe sufficiente per addestrarla)
+
+Mi scuso in anticipo se mi sono dilungato troppo e le auguro una buona serata.
+
+
+
+
+
+

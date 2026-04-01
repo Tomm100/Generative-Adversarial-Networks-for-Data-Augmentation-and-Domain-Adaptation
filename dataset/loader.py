@@ -2,92 +2,77 @@ import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import os
-import shutil
-import random
+import json
 import zipfile
 
-def setup_dataset(zip_path, extract_path='./original_dataset', base_dir='project_dataset', split_ratio=0.8, seed=42):
+
+def setup_dataset(drive_path='/content/drive/MyDrive/ProgettoMLVM/modified_dataset',
+                  local_dir='./modified_dataset'):
     """
-    Estrae il dataset (se necessario) e crea gli split Train/Val/Test.
-    - Test set originale rimane intatto.
-    - Train set originale viene splittato 80/20 in Train e Val.
-    - Validation set originale (16 img) viene aggiunto al nuovo Val set.
+    Carica il modified_dataset da Google Drive.
+    Gestisce sia cartella che zip:
+      - Se drive_path è una cartella → la usa direttamente
+      - Se drive_path + '.zip' esiste → estrae in locale (local_dir)
+
+    Returns:
+        (train_dir, val_dir, test_dir) oppure None se non trovato
     """
-    random.seed(seed)
-    
-    # 1. Estrazione Zip
-    if not os.path.exists(extract_path) and os.path.exists(zip_path):
-        print(f"Estrazione dataset da {zip_path}...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
-        print("Dataset estratto!")
-    elif not os.path.exists(extract_path):
-        print(f"ATTENZIONE: Percorso {extract_path} non trovato e ZIP non presente.")
-        return
+    zip_path = drive_path + '.zip'
 
-    # Percorsi originali
-    orig_train_norm = os.path.join(extract_path, 'chest_xray/train/NORMAL')
-    orig_train_pneu = os.path.join(extract_path, 'chest_xray/train/PNEUMONIA')
-    orig_test = os.path.join(extract_path, 'chest_xray/test')
-    orig_val = os.path.join(extract_path, 'chest_xray/val')
+    if os.path.isdir(drive_path):
+        # Caso 1: cartella non zippata su Drive
+        base = drive_path
+        print(f"📁 Dataset trovato come cartella: {drive_path}")
 
-    # Percorsi destinazione
-    train_dir = os.path.join(base_dir, 'train')
-    val_dir = os.path.join(base_dir, 'val')
-    test_dir = os.path.join(base_dir, 'test')
+    elif os.path.isfile(zip_path):
+        # Caso 2: file .zip su Drive → estrai in locale
+        if os.path.exists(local_dir) and os.path.exists(os.path.join(local_dir, 'split_info.json')):
+            base = local_dir
+            print(f"📁 Dataset già estratto in {local_dir}")
+        else:
+            print(f"📦 Estrazione {zip_path} → {local_dir}...")
+            if os.path.exists(local_dir):
+                import shutil
+                shutil.rmtree(local_dir)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(local_dir)
+            # Controlla se lo zip ha creato una sottocartella
+            entries = os.listdir(local_dir)
+            if len(entries) == 1 and os.path.isdir(os.path.join(local_dir, entries[0])):
+                # Lo zip conteneva una cartella, usa quella
+                base = os.path.join(local_dir, entries[0])
+            else:
+                base = local_dir
+            print(f"✅ Estratto in {base}")
+    else:
+        print(f"ERRORE: né {drive_path} né {zip_path} trovati.")
+        print("Esegui prima create_modified_dataset.py e copia su Drive.")
+        return None
 
-    # Se esiste già, evitiamo di ricrearlo
-    if os.path.exists(base_dir):
-        print(f"Dataset split già presente in {base_dir}")
-        return train_dir, val_dir, test_dir, 0, 0
+    train_dir = os.path.join(base, 'train')
+    val_dir   = os.path.join(base, 'val')
+    test_dir  = os.path.join(base, 'test')
 
-    print("Creazione split Train/Val/Test...")
-    for cat in ['NORMAL', 'PNEUMONIA']:
-        os.makedirs(os.path.join(train_dir, cat), exist_ok=True)
-        os.makedirs(os.path.join(val_dir, cat), exist_ok=True)
+    for d, name in [(train_dir, 'train'), (val_dir, 'val'), (test_dir, 'test')]:
+        if not os.path.exists(d):
+            print(f"ERRORE: cartella {name}/ non trovata in {base}")
+            return None
 
-    # Copia Test Set intatto
-    shutil.copytree(orig_test, test_dir)
+    # Stampa info
+    info_path = os.path.join(base, 'split_info.json')
+    if os.path.exists(info_path):
+        with open(info_path) as f:
+            info = json.load(f)
+        print(f"   Train: {info.get('train_normal', '?')} NORMAL + {info.get('train_pneumonia', '?')} PNEUMONIA")
+        print(f"   Val:   {info.get('val_normal', '?')} NORMAL + {info.get('val_pneumonia', '?')} PNEUMONIA")
+        print(f"   Test:  {info.get('test_normal', '?')} NORMAL + {info.get('test_pneumonia', '?')} PNEUMONIA")
 
-    def split_and_copy(src, train_dst, val_dst, ratio=0.8):
-        files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        random.shuffle(files)
-        sp = int(len(files) * ratio)
-        for f in files[:sp]:
-            shutil.copy(os.path.join(src, f), os.path.join(train_dst, f))
-        for f in files[sp:]:
-            shutil.copy(os.path.join(src, f), os.path.join(val_dst, f))
-        return sp, len(files) - sp
+    return train_dir, val_dir, test_dir
 
-    # Split Train Set originale
-    n_train_n, n_val_n = split_and_copy(orig_train_norm,
-        os.path.join(train_dir, 'NORMAL'), os.path.join(val_dir, 'NORMAL'), split_ratio)
-    n_train_p, n_val_p = split_and_copy(orig_train_pneu,
-        os.path.join(train_dir, 'PNEUMONIA'), os.path.join(val_dir, 'PNEUMONIA'), split_ratio)
-
-    # Aggiungi le 16 immagini della validation originale al nuovo Val set
-    n_orig_val = 0
-    for cat in ['NORMAL', 'PNEUMONIA']:
-        orig_val_cat = os.path.join(orig_val, cat)
-        if os.path.exists(orig_val_cat):
-            for f in os.listdir(orig_val_cat):
-                if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    shutil.copy(os.path.join(orig_val_cat, f), os.path.join(val_dir, cat, f))
-                    n_orig_val += 1
-                    if cat == 'NORMAL': n_val_n += 1
-                    else: n_val_p += 1
-
-    print(f"Dataset generato con successo in {base_dir}!")
-    print(f"Train: {n_train_n} NORMAL + {n_train_p} PNEUMONIA = {n_train_n + n_train_p}")
-    print(f"Val:   {n_val_n} NORMAL + {n_val_p} PNEUMONIA = {n_val_n + n_val_p} (incluso {n_orig_val} da original val)")
-    print(f"Sbilanciamento Train: {n_train_p / n_train_n:.2f}:1 (PNEUMONIA:NORMAL)")
-
-    return train_dir, val_dir, test_dir, n_train_n, n_train_p
 
 def get_dataloaders(train_dir, val_dir, test_dir, img_size=128, batch_size=16):
     """
-    Restituisce i DataLoader per ResNet (RGB convertiti nativamente da ImageFolder 
-    o grayscale se necessari modificando la transform).
+    Restituisce i DataLoader per ResNet (RGB convertiti nativamente da ImageFolder).
     """
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
@@ -105,6 +90,7 @@ def get_dataloaders(train_dir, val_dir, test_dir, img_size=128, batch_size=16):
 
     return train_loader, val_loader, test_loader, train_dataset.classes
 
+
 def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
     """
     Restituisce il DataLoader per il GAN WGAN-GP (1 canale Grayscale, 128x128).
@@ -118,5 +104,5 @@ def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
 
     gan_dataset = datasets.ImageFolder(root=train_dir, transform=gan_transform)
     gan_loader = DataLoader(gan_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    
+
     return gan_loader, gan_dataset.classes
