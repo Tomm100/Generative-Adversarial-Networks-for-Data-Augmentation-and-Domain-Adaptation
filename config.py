@@ -35,7 +35,8 @@ GAN_N_CLASS     = 2
 GAN_NC          = 1
 GAN_D           = 128
 GAN_SAVE_EVERY  = 20
-GAN_LR_DECAY    = {60: 5, 80: 5}
+GAN_LR_MILESTONES = [60, 80]
+GAN_LR_GAMMA    = 0.2           # equivale a dividere per 5
 
 # ─── Riproducibilità ─────────────────────────────────────
 SEED = 42

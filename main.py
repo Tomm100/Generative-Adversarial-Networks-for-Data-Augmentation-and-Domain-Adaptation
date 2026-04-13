@@ -11,7 +11,8 @@ from config import (
     SYNTHETIC_DIR, AUGMENTED_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
     GAN_IMG_SIZE, GAN_BATCH_SIZE, GAN_EPOCHS, GAN_LR, GAN_N_CRITIC,
-    GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, GAN_SAVE_EVERY, GAN_LR_DECAY,
+    GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, GAN_SAVE_EVERY,
+    GAN_LR_MILESTONES, GAN_LR_GAMMA,
     SEED,
 )
 from dataset.loader import setup_dataset, get_dataloaders, get_gan_dataloader
@@ -62,9 +63,9 @@ def main():
 
     G, ckpt_gan = train_wgangp(
         G, D, gan_loader, device, compute_gp,
-        start_epoch=0, end_epoch=GAN_EPOCHS,
+        epochs=GAN_EPOCHS,
         lr=GAN_LR, n_critic=GAN_N_CRITIC, nz=GAN_NZ, n_class=GAN_N_CLASS,
-        lr_decay_schedule=GAN_LR_DECAY,
+        lr_milestones=GAN_LR_MILESTONES, lr_gamma=GAN_LR_GAMMA,
         save_every=GAN_SAVE_EVERY,
         models_dir=GAN_CHECKPOINTS_DIR,
         samples_dir=GAN_SAMPLES_DIR)
