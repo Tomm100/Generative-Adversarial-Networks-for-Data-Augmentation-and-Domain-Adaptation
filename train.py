@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import os
 import time
 from sklearn.metrics import f1_score
 
+from config import CHECKPOINTS_DIR
 from models.resnet import ResNetClassifier
 from utils.visualization import save_gan_samples
 
@@ -21,7 +23,8 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
 
     best_macro_f1 = -1.0
     best_weights = None
-    ckpt_path = f'best_model_{tag}.pth'
+    os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+    ckpt_path = os.path.join(CHECKPOINTS_DIR, f'best_model_{tag}.pth')
     history = {'train_loss': [], 'val_loss': [], 'val_acc': [], 'val_macro_f1': []}
 
     print(f"\n{'='*50}\nTraining {tag} ({epochs} epoche)\n{'='*50}")

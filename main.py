@@ -7,7 +7,7 @@ import os
 import shutil
 
 from config import (
-    DATASET_DIR, RESULTS_DIR, GAN_SAMPLES_DIR, GAN_CHECKPOINTS_DIR,
+    DATASET_DIR, RESULTS_DIR, METRICS_DIR, GAN_SAMPLES_DIR, GAN_CHECKPOINTS_DIR,
     SYNTHETIC_DIR, AUGMENTED_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
     GAN_IMG_SIZE, GAN_BATCH_SIZE, GAN_EPOCHS, GAN_LR, GAN_N_CRITIC,
@@ -52,7 +52,7 @@ def main():
 
     report_p1, cm_p1 = evaluate_on_test(
         model_p1, ckpt_p1, test_loader, classes, device,
-        tag="Phase1", out_dir=RESULTS_DIR)
+        tag="Phase1", out_dir=METRICS_DIR)
 
     # --- 4. WGAN-GP TRAINING ---
     gan_loader, gan_classes = get_gan_dataloader(
@@ -106,11 +106,11 @@ def main():
 
     report_p3, cm_p3 = evaluate_on_test(
         model_p3, ckpt_p3, test_loader, classes, device,
-        tag="Phase3", out_dir=RESULTS_DIR)
+        tag="Phase3", out_dir=METRICS_DIR)
 
     # --- 7. CONFRONTO FINALE ---
     plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes,
-                    report_p1, report_p3, out_dir=RESULTS_DIR)
+                    report_p1, report_p3, out_dir=METRICS_DIR)
 
     print(f"\n📊 Risultati salvati in: {RESULTS_DIR}")
     print("\n Pipeline completata con successo!")

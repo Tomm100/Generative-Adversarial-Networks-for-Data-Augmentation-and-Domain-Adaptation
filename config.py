@@ -9,13 +9,14 @@ import os
 DATA_DIR        = "./data"
 DATASET_DIR     = os.path.join(DATA_DIR, "modified_dataset")
 
-# ─── Paths: Output ───────────────────────────────────────
-CHECKPOINTS_DIR   = "./checkpoints"
-RESULTS_DIR       = "./results"
-GAN_SAMPLES_DIR   = "./gan_training_samples"
-GAN_CHECKPOINTS_DIR = os.path.join(CHECKPOINTS_DIR, "gan")
-SYNTHETIC_DIR     = "./synthetic_images"
-AUGMENTED_DIR     = "./augmented_dataset"
+# ─── Paths: Output (tutto sotto results/) ────────────────
+RESULTS_DIR         = "./results"
+METRICS_DIR         = os.path.join(RESULTS_DIR, "metrics")
+GAN_SAMPLES_DIR     = os.path.join(RESULTS_DIR, "gan_samples")
+GAN_CHECKPOINTS_DIR = os.path.join(RESULTS_DIR, "gan_checkpoints")
+SYNTHETIC_DIR       = os.path.join(RESULTS_DIR, "synthetic_images")
+CHECKPOINTS_DIR     = os.path.join(RESULTS_DIR, "checkpoints")
+AUGMENTED_DIR       = os.path.join(RESULTS_DIR, "augmented_dataset")
 
 # ─── ResNet ──────────────────────────────────────────────
 RESNET_IMG_SIZE    = 128
