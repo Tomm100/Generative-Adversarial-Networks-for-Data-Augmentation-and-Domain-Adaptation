@@ -8,11 +8,10 @@ from sklearn.metrics import f1_score
 
 from models.resnet import ResNetClassifier
 
-def train_resnet(train_loader, val_loader, device, epochs=15, lr=0.001, patience=5, tag="Phase1"):
+def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Phase1"):
     """
     Allena ResNet18 (Feature Extractor / Classifier).
     Salva il checkpoint migliore in base alla Macro F1 sul validation set.
-    Early stopping con patience configurabile.
     """
     model = ResNetClassifier(num_classes=2)
     model = model.to(device)
@@ -22,11 +21,10 @@ def train_resnet(train_loader, val_loader, device, epochs=15, lr=0.001, patience
 
     best_macro_f1 = -1.0
     best_weights = None
-    patience_counter = 0
     ckpt_path = f'best_model_{tag}.pth'
     history = {'train_loss': [], 'val_loss': [], 'val_acc': [], 'val_macro_f1': []}
 
-    print(f"\n{'='*50}\nTraining {tag} ({epochs} epoche, patience={patience})\n{'='*50}")
+    print(f"\n{'='*50}\nTraining {tag} ({epochs} epoche)\n{'='*50}")
 
     for epoch in range(epochs):
         # --- Train ---
@@ -70,17 +68,10 @@ def train_resnet(train_loader, val_loader, device, epochs=15, lr=0.001, patience
         if macro_f1 > best_macro_f1:
             best_macro_f1 = macro_f1
             best_weights = {k: v.clone() for k, v in model.state_dict().items()}
-            patience_counter = 0
-            saved = "best model saved"
-        else:
-            patience_counter += 1
+            saved = " ← best"
 
         print(f"  Epoch {epoch+1}/{epochs} | TL: {avg_tl:.4f} | VL: {avg_vl:.4f} | "
               f"VA: {acc:.2f}% | Macro F1: {macro_f1:.4f}{saved}")
-
-        if patience_counter >= patience:
-            print(f"Early stopping (no improvement for {patience} epochs)")
-            break
 
     # Carica i pesi migliori
     model.load_state_dict(best_weights)
