@@ -6,7 +6,7 @@ import numpy as np
 import time
 from sklearn.metrics import f1_score
 
-from models.resnet import get_resnet_classifier
+from models.resnet import ResNetClassifier
 
 def train_resnet(train_loader, val_loader, device, epochs=15, lr=0.001, patience=5, tag="Phase1"):
     """
@@ -14,7 +14,7 @@ def train_resnet(train_loader, val_loader, device, epochs=15, lr=0.001, patience
     Salva il checkpoint migliore in base alla Macro F1 sul validation set.
     Early stopping con patience configurabile.
     """
-    model = get_resnet_classifier(num_classes=2)
+    model = ResNetClassifier(num_classes=2)
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()

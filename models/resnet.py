@@ -1,13 +1,20 @@
 import torch.nn as nn
 import torchvision.models as models
 
-def get_resnet_classifier(num_classes=2):
+
+class ResNetClassifier(nn.Module):
     """
-    Carica ResNet-18 pre-addestrata su ImageNet e modifica 
-    l'ultimo layer fully-connected per il numero specificato di classi.
+    Classificatore basato su ResNet-18 pre-addestrata su ImageNet.
+    Sostituisce l'ultimo layer fully-connected per il numero specificato di classi.
     """
-    model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-    # Sostituiamo l'ultimo strato (Fully Connected)
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, num_classes)
-    return model
+
+    def __init__(self, num_classes=2):
+        super().__init__()
+        # Carica il backbone ResNet-18 pre-addestrato
+        self.backbone = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        # Sostituiamo l'ultimo strato (Fully Connected)
+        num_ftrs = self.backbone.fc.in_features
+        self.backbone.fc = nn.Linear(num_ftrs, num_classes)
+
+    def forward(self, x):
+        return self.backbone(x)
