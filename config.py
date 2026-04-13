@@ -5,11 +5,17 @@ Tutti gli iperparametri e i path sono definiti qui.
 
 import os
 
-# ─── Paths ───────────────────────────────────────────────
+# ─── Paths: Input ────────────────────────────────────────
 DATA_DIR        = "./data"
 DATASET_DIR     = os.path.join(DATA_DIR, "modified_dataset")
-CHECKPOINTS_DIR = "./checkpoints"
-OUTPUTS_DIR     = "./outputs"
+
+# ─── Paths: Output ───────────────────────────────────────
+CHECKPOINTS_DIR   = "./checkpoints"
+RESULTS_DIR       = "./results"
+GAN_SAMPLES_DIR   = "./gan_training_samples"
+GAN_CHECKPOINTS_DIR = os.path.join(CHECKPOINTS_DIR, "gan")
+SYNTHETIC_DIR     = "./synthetic_images"
+AUGMENTED_DIR     = "./augmented_dataset"
 
 # ─── ResNet ──────────────────────────────────────────────
 RESNET_IMG_SIZE    = 128

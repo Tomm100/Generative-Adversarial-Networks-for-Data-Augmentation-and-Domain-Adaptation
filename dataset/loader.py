@@ -6,47 +6,36 @@ import json
 import zipfile
 
 
-def setup_dataset(drive_path='/content/drive/MyDrive/ProgettoMLVM/modified_dataset',
-                  local_dir='./modified_dataset'):
+def setup_dataset(dataset_dir='./data/modified_dataset'):
     """
-    Carica il modified_dataset da Google Drive.
+    Carica il modified_dataset.
     Gestisce sia cartella che zip:
-      - Se drive_path è una cartella → la usa direttamente
-      - Se drive_path + '.zip' esiste → estrae in locale (local_dir)
+      - Se dataset_dir è una cartella → la usa direttamente
+      - Se dataset_dir + '.zip' esiste → estrae nella stessa posizione
 
     Returns:
         (train_dir, val_dir, test_dir) oppure None se non trovato
     """
-    zip_path = drive_path + '.zip'
+    zip_path = dataset_dir + '.zip'
 
-    if os.path.isdir(drive_path):
-        # Caso 1: cartella non zippata su Drive
-        base = drive_path
-        print(f"📁 Dataset trovato come cartella: {drive_path}")
+    if os.path.isdir(dataset_dir):
+        base = dataset_dir
+        print(f"📁 Dataset trovato: {dataset_dir}")
 
     elif os.path.isfile(zip_path):
-        # Caso 2: file .zip su Drive → estrai in locale
-        if os.path.exists(local_dir) and os.path.exists(os.path.join(local_dir, 'split_info.json')):
-            base = local_dir
-            print(f"📁 Dataset già estratto in {local_dir}")
+        print(f"📦 Estrazione {zip_path} → {dataset_dir}...")
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            zf.extractall(dataset_dir)
+        # Controlla se lo zip ha creato una sottocartella
+        entries = os.listdir(dataset_dir)
+        if len(entries) == 1 and os.path.isdir(os.path.join(dataset_dir, entries[0])):
+            base = os.path.join(dataset_dir, entries[0])
         else:
-            print(f"📦 Estrazione {zip_path} → {local_dir}...")
-            if os.path.exists(local_dir):
-                import shutil
-                shutil.rmtree(local_dir)
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(local_dir)
-            # Controlla se lo zip ha creato una sottocartella
-            entries = os.listdir(local_dir)
-            if len(entries) == 1 and os.path.isdir(os.path.join(local_dir, entries[0])):
-                # Lo zip conteneva una cartella, usa quella
-                base = os.path.join(local_dir, entries[0])
-            else:
-                base = local_dir
-            print(f"✅ Estratto in {base}")
+            base = dataset_dir
+        print(f"✅ Estratto in {base}")
     else:
-        print(f"ERRORE: né {drive_path} né {zip_path} trovati.")
-        print("Esegui prima create_modified_dataset.py e copia su Drive.")
+        print(f"ERRORE: né {dataset_dir} né {zip_path} trovati.")
+        print("Assicurati di aver copiato il dataset nella cartella corretta.")
         return None
 
     train_dir = os.path.join(base, 'train')
@@ -58,7 +47,7 @@ def setup_dataset(drive_path='/content/drive/MyDrive/ProgettoMLVM/modified_datas
             print(f"ERRORE: cartella {name}/ non trovata in {base}")
             return None
 
-    # Stampa info
+    # Stampa info split se disponibile
     info_path = os.path.join(base, 'split_info.json')
     if os.path.exists(info_path):
         with open(info_path) as f:
