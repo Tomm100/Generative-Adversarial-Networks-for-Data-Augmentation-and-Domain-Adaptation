@@ -4,6 +4,7 @@ import torch.optim as optim
 import numpy as np
 import os
 import time
+import wandb
 from sklearn.metrics import f1_score
 
 from config import CHECKPOINTS_DIR
@@ -66,6 +67,13 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
         history['val_acc'].append(acc)
         history['val_macro_f1'].append(macro_f1)
 
+        wandb.log({
+            f"{tag}/train_loss": avg_tl,
+            f"{tag}/val_loss": avg_vl,
+            f"{tag}/val_acc": acc,
+            f"{tag}/val_macro_f1": macro_f1,
+            f"{tag}/epoch": epoch + 1
+        })
         # Best model selection by Macro F1
         saved = ""
         if macro_f1 > best_macro_f1:
@@ -238,9 +246,21 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         if epoch % 5 == 0 or epoch == 1:
             w_dist = -np.mean(d_losses) if d_losses else 0
             g_avg = np.mean(g_losses) if g_losses else 0
+            d_avg = np.mean(d_losses) if d_losses else 0
             print(f"  [{epoch}/{epochs}] W_dist: {w_dist:.1f} | "
                   f"G_loss: {g_avg:.1f} | Time: {elapsed:.1f}m | ETA: {eta:.1f}m")
             save_gan_samples(G, fixed_z, fixed_labels, epoch, samples_dir, num_vis)
+
+            log_dict = {
+                "GAN_Training/Wasserstein_Dist": w_dist,
+                "GAN_Training/Generator_Loss": g_avg,
+                "GAN_Training/Critic_Loss": d_avg,
+                "GAN_Training/Epoch": epoch
+            }
+            sample_img_path = os.path.join(samples_dir, f'samples_epoch_{epoch:03d}.png')
+            if os.path.exists(sample_img_path):
+                log_dict["GAN_Samples/Generated_Images"] = wandb.Image(sample_img_path, caption=f"Epoch {epoch}")
+            wandb.log(log_dict)
 
         # --- Checkpoint ---
         if epoch % save_every == 0 or epoch == epochs:
@@ -342,6 +362,12 @@ def _run_augmented_validation(G, epoch, device, nz, n_class,
     best_acc = hist['val_acc'][hist['val_macro_f1'].index(best_f1)]
     result = {'epoch': epoch, 'macro_f1': best_f1, 'accuracy': best_acc}
 
+    wandb.log({
+        "GAN_Val_TSTR/macro_f1": best_f1,
+        "GAN_Val_TSTR/accuracy": best_acc,
+        "GAN_Val_TSTR/epoch": epoch
+    })
+    
     print(f"  [VAL] Ep.{epoch}: Macro F1 = {best_f1:.4f}, Acc = {best_acc:.2f}%")
 
     # 4. Se è il migliore, conserva il dataset augmented

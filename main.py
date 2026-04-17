@@ -28,6 +28,23 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Avvio pipeline su Device: {device}")
 
+    wandb.init(
+        project="gan-chest-xray-augmentation", # Nome del tuo progetto su WandB
+        config={
+            "seed": SEED,
+            "resnet_img_size": RESNET_IMG_SIZE,
+            "resnet_batch_size": RESNET_BATCH_SIZE,
+            "resnet_epochs": RESNET_EPOCHS,
+            "resnet_lr": RESNET_LR,
+            "gan_img_size": GAN_IMG_SIZE,
+            "gan_batch_size": GAN_BATCH_SIZE,
+            "gan_epochs": GAN_EPOCHS,
+            "gan_lr": GAN_LR,
+            "gan_n_critic": GAN_N_CRITIC,
+            "gan_nz": GAN_NZ
+        }
+    )
+
     # --- 1. SETUP DATASET ---
     res = setup_dataset(dataset_dir=DATASET_DIR)
     if not res:
@@ -131,6 +148,7 @@ def main():
     print(f"\n📊 Risultati salvati in: {RESULTS_DIR}")
     print("\n Pipeline completata con successo!")
 
+    wandb.finish()
 
 if __name__ == '__main__':
     main()

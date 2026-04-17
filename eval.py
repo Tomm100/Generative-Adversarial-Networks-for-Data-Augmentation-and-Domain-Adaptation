@@ -4,6 +4,7 @@ import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix
 import os
 from torchvision import transforms
+import wandb
 
 def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Phase1", out_dir='./results'):
     """
@@ -43,6 +44,13 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
     ax.set_title(f'Confusion Matrix — {tag}')
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, f'cm_{tag}.png'))
+    wandb.log({
+        f"{tag}/Confusion_Matrix_Image": wandb.Image(os.path.join(out_dir, f'cm_{tag}.png')),
+        f"{tag}_Test/Accuracy": report_dict["accuracy"],
+        f"{tag}_Test/Macro_F1": report_dict["macro avg"]["f1-score"],
+        f"{tag}_Test/NORMAL_F1": report_dict["NORMAL"]["f1-score"],
+        f"{tag}_Test/PNEUMONIA_F1": report_dict["PNEUMONIA"]["f1-score"]
+    })
     plt.close(fig) # Non usiamo plt.show() in esecuzione batch su server
 
     return report_dict, cm
@@ -138,3 +146,8 @@ def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, 'cm_comparison.png'))
     plt.close(fig)
+
+    wandb.log({
+        "Final_Comparison/Training_Curves": wandb.Image(os.path.join(out_dir, 'comparison_p1_vs_p3.png')),
+        "Final_Comparison/Confusion_Matrices": wandb.Image(os.path.join(out_dir, 'cm_comparison.png'))
+    })
