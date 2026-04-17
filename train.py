@@ -6,6 +6,7 @@ import os
 import time
 import wandb
 from sklearn.metrics import f1_score
+from tqdm import tqdm
 
 from config import CHECKPOINTS_DIR
 from models.resnet import ResNetClassifier
@@ -34,13 +35,17 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
         # --- Train ---
         model.train()
         rl = 0.0
-        for x, y in train_loader:
+        
+        pbar_train = tqdm(train_loader, desc=f"  Train Ep {epoch+1}/{epochs}", leave=False)
+        for x, y in pbar_train:
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             loss = criterion(model(x), y)
             loss.backward()
             optimizer.step()
             rl += loss.item()
+            pbar_train.set_postfix({'loss': f"{loss.item():.4f}"})
+            
         avg_tl = rl / len(train_loader)
 
         # --- Validation ---
@@ -48,7 +53,8 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
         vl, correct, total = 0.0, 0, 0
         all_preds, all_labels = [], []
         with torch.no_grad():
-            for x, y in val_loader:
+            pbar_val = tqdm(val_loader, desc=f"  Val Ep {epoch+1}/{epochs}", leave=False)
+            for x, y in pbar_val:
                 x, y = x.to(device), y.to(device)
                 out = model(x)
                 vl += criterion(out, y).item()
@@ -203,7 +209,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         d_losses, g_losses = [], []
         gp_losses, eps_losses = [], []
 
-        for batch_idx, (x_, _) in enumerate(gan_loader):
+        pbar_gan = tqdm(gan_loader, desc=f"  Epoch {epoch}/{epochs}", leave=False)
+        for batch_idx, (x_, _) in enumerate(pbar_gan):
             mb = x_.size(0)
             x_ = x_.to(device)
 
@@ -233,6 +240,9 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                 g_loss.backward()
                 G_opt.step()
                 g_losses.append(g_loss.item())
+            
+            # Aggiorna progress bar con valori intermedi
+            pbar_gan.set_postfix({'D': f"{d_loss.item():.2f}", 'G': f"{g_losses[-1] if g_losses else 0.0:.2f}"})
 
         # --- LR Scheduler step (dopo ogni epoca) ---
         old_lr = G_opt.param_groups[0]['lr']
