@@ -5,6 +5,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import os
 from torchvision import transforms
 import wandb
+import torch.nn.functional as F
 
 def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Phase1", out_dir='./results'):
     """
@@ -22,7 +23,7 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
             logits = model(x)
-            probs = torch.nn.functional.softmax(logits, dim=1)
+            probs = F.softmax(logits, dim=1)
             _, pred = torch.max(logits, 1)
             all_preds.extend(pred.cpu().numpy())
             all_labels.extend(y.cpu().numpy())
