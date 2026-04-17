@@ -201,6 +201,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
 
     for epoch in range(1, epochs + 1):
         d_losses, g_losses = [], []
+        gp_losses, eps_losses = [], []
 
         for batch_idx, (x_, _) in enumerate(gan_loader):
             mb = x_.size(0)
@@ -221,6 +222,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             d_loss.backward()
             D_opt.step()
             d_losses.append(d_loss.item())
+            gp_losses.append(gp.item())
+            eps_losses.append(epsilon_penalty.item())
 
             # --- Train Generator ---
             if (batch_idx + 1) % n_critic == 0:
@@ -247,6 +250,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             w_dist = -np.mean(d_losses) if d_losses else 0
             g_avg = np.mean(g_losses) if g_losses else 0
             d_avg = np.mean(d_losses) if d_losses else 0
+            gp_avg = np.mean(gp_losses) if gp_losses else 0
+            eps_avg = np.mean(eps_losses) if eps_losses else 0
             print(f"  [{epoch}/{epochs}] W_dist: {w_dist:.1f} | "
                   f"G_loss: {g_avg:.1f} | Time: {elapsed:.1f}m | ETA: {eta:.1f}m")
             save_gan_samples(G, fixed_z, fixed_labels, epoch, samples_dir, num_vis)
@@ -255,6 +260,9 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                 "GAN_Training/Wasserstein_Dist": w_dist,
                 "GAN_Training/Generator_Loss": g_avg,
                 "GAN_Training/Critic_Loss": d_avg,
+                "GAN_Training/Gradient_Penalty": gp_avg,
+                "GAN_Training/Epsilon_Penalty": eps_avg,
+                "GAN_Training/LR_Generator": new_lr,
                 "GAN_Training/Epoch": epoch
             }
             sample_img_path = os.path.join(samples_dir, f'samples_epoch_{epoch:03d}.png')

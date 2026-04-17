@@ -5,6 +5,7 @@ Main script che orchestra l'intera pipeline usando i moduli separati.
 import torch
 import os
 import shutil
+import wandb
 
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR, GAN_SAMPLES_DIR, GAN_CHECKPOINTS_DIR,
@@ -81,6 +82,9 @@ def main():
 
     G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GAN_D).to(device)
     D = Critic(nc=GAN_NC, n_class=GAN_N_CLASS, d=GAN_D).to(device)
+
+    wandb.watch(G, log="all", log_freq=10)
+    wandb.watch(D, log="all", log_freq=10)
 
     G, ckpt_gan, best_val_epoch, val_history = train_wgangp(
         G, D, gan_loader, device, compute_gp,

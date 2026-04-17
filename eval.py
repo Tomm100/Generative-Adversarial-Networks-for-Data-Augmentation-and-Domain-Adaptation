@@ -17,12 +17,16 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
     model.eval()
 
     all_preds, all_labels = [], []
+    all_probs = []
     with torch.no_grad():
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
-            _, pred = torch.max(model(x), 1)
+            logits = model(x)
+            probs = torch.nn.functional.softmax(logits, dim=1)
+            _, pred = torch.max(logits, 1)
             all_preds.extend(pred.cpu().numpy())
             all_labels.extend(y.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
 
     print(f"\n{'='*50}\nRISULTATI {tag}\n{'='*50}")
     report_dict = classification_report(all_labels, all_preds, target_names=class_names, output_dict=True)
@@ -49,7 +53,9 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
         f"{tag}_Test/Accuracy": report_dict["accuracy"],
         f"{tag}_Test/Macro_F1": report_dict["macro avg"]["f1-score"],
         f"{tag}_Test/NORMAL_F1": report_dict["NORMAL"]["f1-score"],
-        f"{tag}_Test/PNEUMONIA_F1": report_dict["PNEUMONIA"]["f1-score"]
+        f"{tag}_Test/PNEUMONIA_F1": report_dict["PNEUMONIA"]["f1-score"],
+        f"{tag}_Test/ROC_Curve": wandb.plot.roc_curve(all_labels, all_probs, labels=class_names),
+        f"{tag}_Test/PR_Curve": wandb.plot.pr_curve(all_labels, all_probs, labels=class_names)
     })
     plt.close(fig) # Non usiamo plt.show() in esecuzione batch su server
 
