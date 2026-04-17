@@ -90,34 +90,61 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                  lr_milestones=None, lr_gamma=0.2,
                  save_every=20,
                  models_dir='gan_checkpoints',
-                 samples_dir='gan_samples'):
+                 samples_dir='gan_samples',
+                 # --- Parametri validazione periodica ---
+                 validate_every=15,
+                 train_dir=None, val_dir=None, test_dir=None,
+                 num_gen_normal=0, num_gen_pneumonia=0,
+                 resnet_img_size=128, resnet_batch_size=32, resnet_epochs=5,
+                 augmented_dir='./augmented_dataset'):
     """
-    Allena WGAN-GP per la generazione di immagini.
+    Allena WGAN-GP con validazione periodica.
+
+    Ogni `validate_every` epoche:
+      1. Genera immagini sintetiche
+      2. Crea dataset augmented (train originale + sintetiche)
+      3. Allena ResNet veloce e misura Macro F1 su val set
+      4. Se è il miglior F1 → conserva il dataset augmented
 
     Args:
-        G, D:           Generator e Critic (già su device)
-        gan_loader:     DataLoader per il training
-        device:         torch device
-        compute_gp_fn:  funzione gradient penalty (da models.wgan)
-        epochs:         numero totale di epoche
-        lr:             learning rate base
-        n_critic:       rapporto aggiornamenti critic/generator
-        nz, n_class:    config GAN
-        lr_milestones:  lista di epoche in cui applicare il decay (default: [60, 80])
-        lr_gamma:       fattore moltiplicativo per il decay (default: 0.2, equivale a /5)
-        save_every:     salva checkpoint ogni N epoche
-        models_dir:     cartella dove salvare i checkpoint G/D
-        samples_dir:    cartella dove salvare le griglie di sample
+        G, D:               Generator e Critic (già su device)
+        gan_loader:         DataLoader per il training GAN
+        device:             torch device
+        compute_gp_fn:      funzione gradient penalty
+        epochs:             numero totale di epoche
+        lr:                 learning rate base
+        n_critic:           rapporto aggiornamenti critic/generator
+        nz, n_class:        config GAN
+        lr_milestones:      epoche in cui applicare il decay (default: [60, 80])
+        lr_gamma:           fattore decay (default: 0.2)
+        save_every:         salva checkpoint ogni N epoche
+        models_dir:         cartella checkpoint G/D
+        samples_dir:        cartella sample visivi
+        validate_every:     frequenza validazione (0 = disabilitata)
+        train_dir:          path train set originale (per augmentation)
+        val_dir, test_dir:  path val/test set (per DataLoader ResNet)
+        num_gen_normal/pneumonia: quante sintetiche generare per classe
+        resnet_img_size/batch_size/epochs: config ResNet per validazione
+        augmented_dir:      dove salvare il miglior dataset augmented
 
     Returns:
-        (G, g_final_path) — Generator allenato e path dell'ultimo checkpoint
+        (G, g_final_path, best_val_epoch, val_history)
+        - best_val_epoch: epoca con miglior Macro F1 (0 se nessuna validazione)
+        - val_history: lista di dict {epoch, macro_f1, accuracy}
     """
     import os
+    import shutil
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(samples_dir, exist_ok=True)
 
     if lr_milestones is None:
         lr_milestones = [60, 80]
+
+    # Controlla se la validazione periodica è attivabile
+    val_enabled = (validate_every > 0 and train_dir is not None
+                   and val_dir is not None)
+    if not val_enabled and validate_every > 0:
+        print("  ⚠️  Validazione periodica disabilitata: train_dir o val_dir non forniti")
 
     # --- Inizializzazione pesi ---
     G.weight_init(0.0, 0.02)
@@ -159,10 +186,18 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         onehot[torch.ones(num_vis, dtype=torch.long).to(device)]
     ])
 
+    # --- Validation tracking ---
+    val_history = []
+    best_val_f1 = -1.0
+    best_val_epoch = 0
+
     # --- Training loop ---
     print(f"\nTraining WGAN-GP: {epochs} epoche")
     print(f"  LR: {lr}, n_critic={n_critic}")
     print(f"  LR decay: x{lr_gamma} alle epoche {lr_milestones}")
+    if val_enabled:
+        print(f"  Validazione ogni {validate_every} epoche "
+              f"(ResNet {resnet_epochs} ep.)")
 
     gan_start = time.time()
 
@@ -226,10 +261,112 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             torch.save(D.state_dict(), d_path)
             print(f"  [Checkpoint] G + D salvati (ep.{epoch})")
 
+        # --- Validazione periodica ---
+        if val_enabled and epoch % validate_every == 0:
+            val_result = _run_augmented_validation(
+                G, epoch, device, nz, n_class,
+                train_dir, val_dir,
+                num_gen_normal, num_gen_pneumonia,
+                resnet_img_size, resnet_batch_size, resnet_epochs,
+                augmented_dir, best_val_f1)
+            val_history.append(val_result)
+
+            if val_result['macro_f1'] > best_val_f1:
+                best_val_f1 = val_result['macro_f1']
+                best_val_epoch = epoch
+
+    # --- Fine training ---
     gan_time = (time.time() - gan_start) / 60
     g_final = os.path.join(models_dir, f'G_epoch_{epochs}.pth')
     print(f"\nGAN training completato in {gan_time:.1f} minuti!")
     print(f"  Checkpoint finali: {models_dir}/G_epoch_{epochs}.pth")
 
-    return G, g_final
+    if val_history:
+        print(f"\n{'='*50}")
+        print(f"Validation Summary")
+        print(f"{'='*50}")
+        for r in val_history:
+            marker = " ← BEST" if r['epoch'] == best_val_epoch else ""
+            print(f"  Ep.{r['epoch']:3d} | Macro F1: {r['macro_f1']:.4f} | "
+                  f"Acc: {r['accuracy']:.2f}%{marker}")
+        print(f"\n  Miglior epoca: {best_val_epoch} (F1: {best_val_f1:.4f})")
+        print(f"  Dataset augmented salvato in: {augmented_dir}")
+
+    return G, g_final, best_val_epoch, val_history
+
+
+def _run_augmented_validation(G, epoch, device, nz, n_class,
+                              train_dir, val_dir,
+                              num_gen_normal, num_gen_pneumonia,
+                              resnet_img_size, resnet_batch_size, resnet_epochs,
+                              augmented_dir, current_best_f1):
+    """
+    Esegue un singolo step di validazione:
+      1. Genera sintetiche in cartella temporanea
+      2. Crea dataset augmented (train originale + sintetiche)
+      3. Allena ResNet e misura Macro F1 su val set
+      4. Se è il miglior F1, salva il dataset in augmented_dir
+      5. Pulisce i file temporanei
+    """
+    import os
+    import shutil
+    from eval import generate_synthetic_images
+    from dataset.loader import get_dataloaders
+
+    print(f"\n  {'─'*40}")
+    print(f"  [VAL] Validazione epoca {epoch}")
+    print(f"  {'─'*40}")
+
+    val_tmp = './_val_tmp'
+    tmp_syn = os.path.join(val_tmp, 'synthetic')
+    tmp_aug_train = os.path.join(val_tmp, 'augmented', 'train')
+
+    # Pulisci tmp precedente
+    if os.path.exists(val_tmp):
+        shutil.rmtree(val_tmp)
+
+    # 1. Genera sintetiche
+    generate_synthetic_images(
+        G, num_gen_normal, num_gen_pneumonia,
+        nz=nz, n_class=n_class, device=device, syn_dir=tmp_syn)
+
+    # 2. Crea dataset augmented: copia train originale + sintetiche
+    shutil.copytree(train_dir, tmp_aug_train)
+    for cat in ['NORMAL', 'PNEUMONIA']:
+        syn_cat = os.path.join(tmp_syn, cat)
+        if os.path.exists(syn_cat):
+            for f in os.listdir(syn_cat):
+                shutil.copy(os.path.join(syn_cat, f),
+                            os.path.join(tmp_aug_train, cat, f))
+
+    # 3. Allena ResNet su augmented, valida su val set
+    aug_loader, val_loader, _, _ = get_dataloaders(
+        tmp_aug_train, val_dir, val_dir,  # test_dir non serve, riuso val_dir
+        img_size=resnet_img_size, batch_size=resnet_batch_size)
+
+    _, hist, _ = train_resnet(
+        aug_loader, val_loader, device,
+        epochs=resnet_epochs, lr=0.001, tag=f"AugVal_ep{epoch}")
+
+    # Risultati
+    best_f1 = max(hist['val_macro_f1'])
+    best_acc = hist['val_acc'][hist['val_macro_f1'].index(best_f1)]
+    result = {'epoch': epoch, 'macro_f1': best_f1, 'accuracy': best_acc}
+
+    print(f"  [VAL] Ep.{epoch}: Macro F1 = {best_f1:.4f}, Acc = {best_acc:.2f}%")
+
+    # 4. Se è il migliore, conserva il dataset augmented
+    if best_f1 > current_best_f1:
+        print(f"  [VAL] ★ Nuovo miglior F1! Salvo dataset augmented...")
+        if os.path.exists(augmented_dir):
+            shutil.rmtree(augmented_dir)
+        shutil.copytree(tmp_aug_train, os.path.join(augmented_dir, 'train'))
+        print(f"  [VAL] Dataset salvato in {augmented_dir}")
+
+    # 5. Pulisci tmp
+    if os.path.exists(val_tmp):
+        shutil.rmtree(val_tmp)
+
+    return result
+
 

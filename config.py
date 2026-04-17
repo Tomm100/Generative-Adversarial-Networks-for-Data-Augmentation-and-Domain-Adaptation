@@ -38,6 +38,8 @@ GAN_D           = 128
 GAN_SAVE_EVERY  = 20
 GAN_LR_MILESTONES = [60, 80]
 GAN_LR_GAMMA    = 0.2           # equivale a dividere per 5
+GAN_VALIDATE_EVERY = 15         # validazione ogni N epoche GAN
+GAN_VAL_RESNET_EPOCHS = 5       # epoche ResNet ridotte per validazione periodica
 
 # ─── Riproducibilità ─────────────────────────────────────
 SEED = 42
