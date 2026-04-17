@@ -171,20 +171,10 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
     #     D.load_state_dict(ckpt['model_state'])
     #     D_opt.load_state_dict(ckpt['optimizer_state'])
 
-    # --- Label condizionali ---
-    img_size = gan_loader.dataset[0][0].shape[1]
-    onehot = torch.eye(n_class).view(n_class, n_class, 1, 1).to(device)
-    fill = torch.zeros([n_class, n_class, img_size, img_size]).to(device)
-    for i in range(n_class):
-        fill[i, i, :, :] = 1
-
     # --- Fixed noise per visualizzare evoluzione ---
     num_vis = 6
-    fixed_z = torch.randn(num_vis * 2, nz, 1, 1).to(device)
-    fixed_labels = torch.cat([
-        onehot[torch.zeros(num_vis, dtype=torch.long).to(device)],
-        onehot[torch.ones(num_vis, dtype=torch.long).to(device)]
-    ])
+    fixed_z = torch.randn(num_vis, nz, 1, 1).to(device)
+    fixed_labels = None  # modello unconditional
 
     # --- Validation tracking ---
     val_history = []
@@ -204,22 +194,22 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
     for epoch in range(1, epochs + 1):
         d_losses, g_losses = [], []
 
-        for batch_idx, (x_, y_) in enumerate(gan_loader):
+        for batch_idx, (x_, _) in enumerate(gan_loader):
             mb = x_.size(0)
-            x_, y_ = x_.to(device), y_.to(device)
-            y_fill = fill[y_]
+            x_ = x_.to(device)
 
             # --- Train Critic ---
             D.zero_grad()
-            D_real = D(x_, y_fill).squeeze().mean()
+            D_real = D(x_).squeeze().mean()
 
             z = torch.randn(mb, nz, 1, 1).to(device)
-            y_gen = torch.randint(0, n_class, (mb,)).to(device)
-            fake = G(z, onehot[y_gen])
-            D_fake = D(fake.detach(), fill[y_gen]).squeeze().mean()
+            fake = G(z)
+            D_fake = D(fake.detach()).squeeze().mean()
 
-            gp, _ = compute_gp_fn(D, x_, fake.detach(), y_fill, fill[y_gen], device)
-            d_loss = D_fake - D_real + gp
+            gp, _ = compute_gp_fn(D, x_, fake.detach(), None, None, device)
+            # Epsilon drift penalty: evita che i logit del Critic divergano
+            epsilon_penalty = 1e-3 * (D_real ** 2).mean()
+            d_loss = D_fake - D_real + gp + epsilon_penalty
             d_loss.backward()
             D_opt.step()
             d_losses.append(d_loss.item())
@@ -228,8 +218,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             if (batch_idx + 1) % n_critic == 0:
                 G.zero_grad()
                 z = torch.randn(mb, nz, 1, 1).to(device)
-                y_gen = torch.randint(0, n_class, (mb,)).to(device)
-                g_loss = -D(G(z, onehot[y_gen]), fill[y_gen]).squeeze().mean()
+                g_loss = -D(G(z)).squeeze().mean()
                 g_loss.backward()
                 G_opt.step()
                 g_losses.append(g_loss.item())

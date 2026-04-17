@@ -5,16 +5,15 @@ from torch.autograd import grad as torch_grad
 
 class Generator(nn.Module):
     """
-    Generator 128x128 per WGAN-GP.
+    Generator 128x128 per WGAN-GP (unconditional — genera solo immagini NORMAL).
     Flow: z(1x1) -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
     """
-    def __init__(self, nz=100, n_class=2, nc=1, d=128):
+    def __init__(self, nz=100, n_class=2, nc=1, d=64):
         super().__init__()
-        self.deconv1_1 = nn.ConvTranspose2d(nz, d*4, 4, 1, 0)
-        self.deconv1_1_bn = nn.BatchNorm2d(d*4)
-        self.deconv1_2 = nn.ConvTranspose2d(n_class, d*4, 4, 1, 0)
-        self.deconv1_2_bn = nn.BatchNorm2d(d*4)
-        self.deconv2 = nn.ConvTranspose2d(d*8, d*4, 4, 2, 1)
+        # n_class mantenuto nella signature per compatibilità con il resto della pipeline
+        self.deconv1 = nn.ConvTranspose2d(nz, d*4, 4, 1, 0)
+        self.deconv1_bn = nn.BatchNorm2d(d*4)
+        self.deconv2 = nn.ConvTranspose2d(d*4, d*4, 4, 2, 1)
         self.deconv2_bn = nn.BatchNorm2d(d*4)
         self.deconv3 = nn.ConvTranspose2d(d*4, d*2, 4, 2, 1)
         self.deconv3_bn = nn.BatchNorm2d(d*2)
@@ -29,10 +28,9 @@ class Generator(nn.Module):
             if isinstance(self._modules[m], (nn.ConvTranspose2d, nn.Conv2d)):
                 self._modules[m].weight.data.normal_(mean, std)
 
-    def forward(self, z, label):
-        x = F.relu(self.deconv1_1_bn(self.deconv1_1(z)))
-        y = F.relu(self.deconv1_2_bn(self.deconv1_2(label)))
-        x = torch.cat([x, y], 1)
+    def forward(self, z, label=None):
+        # label ignorato: generatore unconditional
+        x = F.relu(self.deconv1_bn(self.deconv1(z)))
         x = F.relu(self.deconv2_bn(self.deconv2(x)))
         x = F.relu(self.deconv3_bn(self.deconv3(x)))
         x = F.relu(self.deconv4_bn(self.deconv4(x)))
@@ -42,13 +40,13 @@ class Generator(nn.Module):
 
 class Critic(nn.Module):
     """
-    Critic 128x128 per WGAN-GP.
+    Critic 128x128 per WGAN-GP (unconditional).
     Flow: 128x128 -> 64x64 -> 32x32 -> 16x16 -> 8x8 -> 4x4 -> 1x1
     """
-    def __init__(self, nc=1, n_class=2, d=128):
+    def __init__(self, nc=1, n_class=2, d=64):
         super().__init__()
-        self.conv1_1 = nn.Conv2d(nc, d//2, 4, 2, 1)
-        self.conv1_2 = nn.Conv2d(n_class, d//2, 4, 2, 1)
+        # n_class mantenuto nella signature per compatibilità con il resto della pipeline
+        self.conv1 = nn.Conv2d(nc, d, 4, 2, 1)
         self.conv2 = nn.Conv2d(d, d*2, 4, 2, 1)
         self.conv2_ln = nn.LayerNorm([d*2, 32, 32])
         self.conv3 = nn.Conv2d(d*2, d*4, 4, 2, 1)
@@ -64,10 +62,9 @@ class Critic(nn.Module):
             if isinstance(self._modules[m], (nn.ConvTranspose2d, nn.Conv2d)):
                 self._modules[m].weight.data.normal_(mean, std)
 
-    def forward(self, img, label):
-        x = F.leaky_relu(self.conv1_1(img), 0.2)
-        y = F.leaky_relu(self.conv1_2(label), 0.2)
-        x = torch.cat([x, y], 1)
+    def forward(self, img, label=None):
+        # label ignorato: critic unconditional
+        x = F.leaky_relu(self.conv1(img), 0.2)
         x = F.leaky_relu(self.conv2_ln(self.conv2(x)), 0.2)
         x = F.leaky_relu(self.conv3_ln(self.conv3(x)), 0.2)
         x = F.leaky_relu(self.conv4_ln(self.conv4(x)), 0.2)
@@ -77,14 +74,14 @@ class Critic(nn.Module):
 def compute_gp(D, real, fake, real_lbl, fake_lbl, device, lambda_gp=10):
     """
     Calcola la Gradient Penalty per WGAN-GP.
+    real_lbl e fake_lbl sono ignorati (modello unconditional),
+    mantenuti nella signature per compatibilità con il resto della pipeline.
     """
     bs = real.size(0)
     alpha = torch.rand(bs, 1, 1, 1).to(device).expand_as(real)
-    interp = (alpha * real.data + (1-alpha) * fake.data).requires_grad_(True)
-    alpha_l = torch.rand(bs, 1, 1, 1).to(device).expand_as(real_lbl)
-    interp_l = alpha_l * real_lbl.data + (1-alpha_l) * fake_lbl.data
-    
-    d_interp = D(interp, interp_l)
+    interp = (alpha * real.data + (1 - alpha) * fake.data).requires_grad_(True)
+
+    d_interp = D(interp)
     grads = torch_grad(outputs=d_interp, inputs=interp,
                        grad_outputs=torch.ones_like(d_interp),
                        create_graph=True, retain_graph=True)[0]

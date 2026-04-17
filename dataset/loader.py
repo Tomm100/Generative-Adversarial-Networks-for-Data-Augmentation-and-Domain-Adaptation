@@ -80,9 +80,14 @@ def get_dataloaders(train_dir, val_dir, test_dir, img_size=128, batch_size=16):
     return train_loader, val_loader, test_loader, train_dataset.classes
 
 
-def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
+def get_gan_dataloader(train_dir, img_size=128, batch_size=64, class_name='NORMAL'):
     """
     Restituisce il DataLoader per il GAN WGAN-GP (1 canale Grayscale, 128x128).
+
+    Args:
+        class_name: se specificato, carica solo le immagini di quella classe.
+                    Default 'NORMAL': il GAN unconditional addestra e genera
+                    solo radiografie NORMAL per colmare il gap di bilanciamento.
     """
     gan_transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
@@ -92,6 +97,15 @@ def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
     ])
 
     gan_dataset = datasets.ImageFolder(root=train_dir, transform=gan_transform)
-    gan_loader = DataLoader(gan_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-    return gan_loader, gan_dataset.classes
+    if class_name is not None:
+        if class_name not in gan_dataset.class_to_idx:
+            raise ValueError(f"Classe '{class_name}' non trovata. Disponibili: {list(gan_dataset.class_to_idx.keys())}")
+        target_idx = gan_dataset.class_to_idx[class_name]
+        indices = [i for i, (_, label) in enumerate(gan_dataset.samples) if label == target_idx]
+        gan_dataset = torch.utils.data.Subset(gan_dataset, indices)
+        print(f"  GAN dataloader: {len(indices)} immagini classe '{class_name}'")
+
+    gan_loader = DataLoader(gan_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    all_classes = list(datasets.ImageFolder(root=train_dir).class_to_idx.keys())
+    return gan_loader, all_classes
