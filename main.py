@@ -31,6 +31,7 @@ def main():
 
     wandb.init(
         project="gan-chest-xray-augmentation", # Nome del tuo progetto su WandB
+        entity="MachineLearningForVisionAndMultimedia",
         config={
             "seed": SEED,
             "resnet_img_size": RESNET_IMG_SIZE,
