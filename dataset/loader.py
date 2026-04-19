@@ -80,15 +80,14 @@ def get_dataloaders(train_dir, val_dir, test_dir, img_size=128, batch_size=16):
     return train_loader, val_loader, test_loader, train_dataset.classes
 
 
-def get_gan_dataloader(train_dir, img_size=128, batch_size=64, class_name='NORMAL'):
+def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
     """
     Restituisce il DataLoader per il GAN WGAN-GP (1 canale Grayscale, 128x128).
-
-    Args:
-        class_name: se specificato, carica solo le immagini di quella classe.
-                    Default 'NORMAL': il GAN unconditional addestra e genera
-                    solo radiografie NORMAL per colmare il gap di bilanciamento.
+    Utilizza un WeightedRandomSampler per bilanciare i batch a 50/50 tra classi.
     """
+    import numpy as np
+    from torch.utils.data import WeightedRandomSampler
+
     gan_transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.Grayscale(num_output_channels=1),
@@ -98,14 +97,20 @@ def get_gan_dataloader(train_dir, img_size=128, batch_size=64, class_name='NORMA
 
     gan_dataset = datasets.ImageFolder(root=train_dir, transform=gan_transform)
 
-    if class_name is not None:
-        if class_name not in gan_dataset.class_to_idx:
-            raise ValueError(f"Classe '{class_name}' non trovata. Disponibili: {list(gan_dataset.class_to_idx.keys())}")
-        target_idx = gan_dataset.class_to_idx[class_name]
-        indices = [i for i, (_, label) in enumerate(gan_dataset.samples) if label == target_idx]
-        gan_dataset = torch.utils.data.Subset(gan_dataset, indices)
-        print(f"  GAN dataloader: {len(indices)} immagini classe '{class_name}'")
+    # Calcola pesi inversi alla frequenza di classe
+    labels = [label for _, label in gan_dataset.samples]
+    class_counts = np.bincount(labels)
+    class_weights = 1.0 / class_counts  # peso inversamente proporzionale
+    sample_weights = [class_weights[l] for l in labels]
 
-    gan_loader = DataLoader(gan_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    all_classes = list(datasets.ImageFolder(root=train_dir).class_to_idx.keys())
-    return gan_loader, all_classes
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
+    )
+
+    n_per_class = {gan_dataset.classes[i]: int(c) for i, c in enumerate(class_counts)}
+    print(f"  GAN dataloader: {n_per_class} — batch bilanciati 50/50 con WeightedRandomSampler")
+
+    gan_loader = DataLoader(gan_dataset, batch_size=batch_size, sampler=sampler, drop_last=True)
+    return gan_loader, gan_dataset.classes

@@ -64,36 +64,38 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
 
 def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class, device, syn_dir='synthetic_images'):
     """
-    Genera immagini sintetiche NORMAL per bilanciare il dataset.
-    Il Generator è unconditional: genera solo immagini NORMAL
-    (num_gen_pneumonia è sempre 0 in questa pipeline).
+    Genera immagini sintetiche per bilanciare il dataset originale.
     """
     os.makedirs(os.path.join(syn_dir, 'NORMAL'), exist_ok=True)
     os.makedirs(os.path.join(syn_dir, 'PNEUMONIA'), exist_ok=True)
 
-    if num_gen_normal <= 0:
-        print("  NORMAL: nessuna generazione necessaria")
-        print("Generazione completata! ✅")
-        return
-
+    onehot = torch.eye(n_class).view(n_class, n_class, 1, 1).to(device)
+    
     G.eval()
     with torch.no_grad():
-        generated = 0
-        while generated < num_gen_normal:
-            batch_sz = min(64, num_gen_normal - generated)
-            z = torch.randn(batch_sz, nz, 1, 1).to(device)
-            fakes = G(z)
+        for cls_idx, cls_name, num_gen in [(0, 'NORMAL', num_gen_normal),
+                                            (1, 'PNEUMONIA', num_gen_pneumonia)]:
+            if num_gen <= 0:
+                print(f"  {cls_name}: nessuna generazione necessaria")
+                continue
 
-            for i in range(batch_sz):
-                img = fakes[i].cpu()
-                img = (img + 1) / 2.0  # [-1,1] -> [0,1]
-                img_pil = transforms.ToPILImage()(img)
-                img_rgb = img_pil.convert('RGB')
-                img_rgb.save(os.path.join(syn_dir, 'NORMAL', f'syn_NORMAL_{generated+i}.png'))
+            generated = 0
+            while generated < num_gen:
+                batch_sz = min(64, num_gen - generated)
+                z = torch.randn(batch_sz, nz, 1, 1).to(device)
+                labels = onehot[torch.full((batch_sz,), cls_idx, dtype=torch.long).to(device)]
+                fakes = G(z, labels)
 
-            generated += batch_sz
+                for i in range(batch_sz):
+                    img = fakes[i].cpu()
+                    img = (img + 1) / 2.0  # [-1,1] -> [0,1]
+                    img_pil = transforms.ToPILImage()(img)
+                    img_rgb = img_pil.convert('RGB') # 128x128 
+                    img_rgb.save(os.path.join(syn_dir, cls_name, f'syn_{cls_name}_{generated+i}.png'))
 
-    print(f"  NORMAL: generate {num_gen_normal} immagini sintetiche")
+                generated += batch_sz
+
+            print(f"  {cls_name}: generate {num_gen} immagini sintetiche")
     print("Generazione completata! ✅")
 
 
