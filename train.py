@@ -371,6 +371,8 @@ def _run_augmented_validation(G, epoch, device, nz, n_class,
         nz=nz, n_class=n_class, device=device, syn_dir=tmp_syn)
 
     # 2. Crea dataset augmented: copia train originale + sintetiche
+    print(f"  [DEBUG] train_dir = {train_dir}")
+    print(f"  [DEBUG] contenuto train_dir: {os.listdir(train_dir)}")
     shutil.copytree(train_dir, tmp_aug_train)
     for cat in ['NORMAL', 'PNEUMONIA']:
         syn_cat = os.path.join(tmp_syn, cat)
