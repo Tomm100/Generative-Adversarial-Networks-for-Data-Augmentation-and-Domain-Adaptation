@@ -1,0 +1,21 @@
+\section{Methodology}
+
+Il cuore del progetto risiede in una pipeline sequenziale progettata per validare l'ipotesi che la generazione sintetica mirata possa mitigare i limiti strutturali di un dataset sbilanciato.
+
+\subsection{Fase 1: Valutazione della Baseline e Analisi dello Sbilanciamento}
+
+Il punto di partenza del lavoro consiste nello stabilire un benchmark di riferimento attraverso l'addestramento di un classificatore ResNet18 sul dataset originale. In questa fase, l'enfasi è posta sull'identificazione del bias indotto dallo sbilanciamento di classe (circa 3:1).\\
+
+Data la natura critica della diagnostica medica, abbiamo scelto di non affidarci all'accuratezza globale, metrica che in presenza di classi minoritarie risulta spesso ingannevole. Abbiamo invece adottato il Macro F1-Score come bussola per la valutazione: questa metrica, calcolando la media non pesata delle armoniche tra precisione e richiamo di ogni classe, costringe il modello a dimostrare competenza anche sulla classe NORMAL, impedendo alla rete di ignorare i casi sani per massimizzare il successo statistico sui casi di polmonite.
+
+\subsection{Fase 2: Implementazione della C-DCWGAN-GP}
+
+Per colmare il gap distributivo, abbiamo optato per un framework generativo avanzato che potesse garantire non solo il realismo visivo, ma anche la stabilità numerica.
+
+L'architettura scelta è una Conditional Deep Convolutional WGAN-GP. L'aspetto condizionale è fondamentale: integrando l'encoding One-Hot delle etichette direttamente nel vettore latente $N_z = 100$, permettiamo al generatore di apprendere una rappresentazione disaccoppiata delle due classi. Dal punto di vista della stabilità, abbiamo abbandonato le GAN classiche in favore della formulazione di Wasserstein. La stabilità è ulteriormente blindata dalla Gradient Penalty (GP), la quale impone il vincolo di 1-Lipschitz continuity necessario per un addestramento fluido.\\
+
+Un aspetto distintivo della nostra implementazione riguarda la gestione del Critic. Per evitare che la Gradient Penalty venisse corrotta da dipendenze inter-campione, abbiamo rimosso ogni strato di Batch Normalization nel Critic, sostituendolo con la Layer Normalization. Inoltre, per prevenire derive numeriche nelle fasi avanzate di training, abbiamo introdotto una Epsilon Drift Penalty, una sorta di "ancora" matematica che mantiene i valori di output del Critic entro range computazionalmente sicuri.
+
+\subsection{Fase 3: Validazione "In-Loop" e Valutazione Finale}
+
+La selezione del generatore ottimale non è stata lasciata al caso o a una valutazione puramente estetica. Abbiamo implementato un sistema di Augmented Validation: ad intervalli regolari, una ResNet "sonda" viene addestrata su un mix di dati reali e campioni sintetici appena prodotti. Solo il checkpoint della GAN che permette alla sonda di ottenere il miglior Macro F1-Score sul validation set reale viene scelto per la fase finale. In quest'ultima fase, il dataset viene portato a un rapporto di equilibrio 1:1, addestrando il classificatore definitivo per dimostrare come la diversità sintetica si traduca in una superiore capacità di generalizzazione.

@@ -1,0 +1,7 @@
+\section{Introduction}
+\label{sec:intro}
+
+L'interpretazione automatizzata delle radiografie del torace (CXR) è diventata un pilastro della radiologia assistita dal computer. Tuttavia, l'efficacia dei modelli allo stato dell'arte è strettamente legata alla disponibilità di dataset bilanciati. Il dataset pediatrico "Chest X-Ray Pneumonia" \cite{kermany2018identifying} presenta uno sbilanciamento di circa 1:3 tra casi sani (NORMAL) e casi patologici (PNEUMONIA). In tali scenari, un classificatore basato su architetture residue come la ResNet18 \cite{He_2016_CVPR} tende a massimizzare l'accuratezza globale a discapito della capacità di identificare correttamente la classe minoritaria, portando a un F1-score sub-ottimale.
+
+Per ovviare a queste limitazioni, questo progetto implementa una strategia di Data Augmentation generativa. Invece di limitarsi a trasformazioni geometriche, abbiamo progettato una cDC-WGAN-GP. Questa architettura combina il condizionamento delle etichette \cite{mirza2014conditionalgenerativeadversarialnets} con la stabilità della Wasserstein Loss \cite{arjovsky2017wasserstein} e della Gradient Penalty \cite{gulrajani2017improved}, permettendo di generare immagini radiografiche sintetiche che catturano la distribuzione della classe sottorappresentata. L'obiettivo finale è dimostrare come l'arricchimento del dataset possa fungere da regolarizzatore e migliorare la generalizzazione. Inoltre, il lavoro esplora l'impatto di tali tecniche in scenari di domain adaptation. [...continue DA...].
+
