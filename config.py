@@ -41,5 +41,16 @@ GAN_LR_GAMMA    = 0.2           # equivale a dividere per 5
 GAN_VALIDATE_EVERY = 10         # validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS = 5       # epoche ResNet ridotte per validazione periodica
 
+# ─── DANN (Domain Adaptation) ────────────────────────────
+DANN_SOURCE_DIR      = os.path.join(DATA_DIR, "Mooney_Augmented")     # Pediatrico (Source)
+DANN_TARGET_DIR      = os.path.join(DATA_DIR, "NIH_Target_DA_Ready")  # Adulti (Target)
+DANN_IMG_SIZE        = 224          # Nativo per ResNet-18
+DANN_BATCH_SIZE      = 32          # Per dominio (total batch = 64)
+DANN_EPOCHS          = 50
+DANN_LR_FEATURE      = 1e-4        # LR basso per backbone pretrained
+DANN_LR_CLASSIFIER   = 1e-3        # LR alto per classificatori (10×)
+DANN_BETA1           = 0.5         # β₁ ridotto per stabilità con GRL
+DANN_CHECKPOINTS_DIR = os.path.join(RESULTS_DIR, "dann_checkpoints")
+
 # ─── Riproducibilità ─────────────────────────────────────
 SEED = 42
