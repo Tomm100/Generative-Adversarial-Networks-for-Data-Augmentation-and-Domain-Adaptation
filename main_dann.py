@@ -114,7 +114,7 @@ def main():
         print(f"  ✅ {name}: {path}")
 
     # ── Verifica checkpoint ResNet Phase 3 ──
-    resnet_ckpt = os.path.join(CHECKPOINTS_DIR, 'best_model_Phase3.pth')
+    resnet_ckpt = os.path.join("./checkpoints", 'best_model_Phase3.pth')
     if not os.path.isfile(resnet_ckpt):
         print(f"\n  ❌ ERRORE: Checkpoint ResNet Phase 3 non trovato: {resnet_ckpt}")
         print(f"  Esegui prima la pipeline principale (main.py) per generare il checkpoint.")
