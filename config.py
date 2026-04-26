@@ -42,8 +42,8 @@ GAN_VALIDATE_EVERY = 10         # validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS = 5       # epoche ResNet ridotte per validazione periodica
 
 # ─── DANN (Domain Adaptation) ────────────────────────────
-DANN_SOURCE_DIR      = os.path.join(DATA_DIR, "Mooney_Augmented")     # Pediatrico (Source)
-DANN_TARGET_DIR      = os.path.join(DATA_DIR, "NIH_Target_DA_Ready")  # Adulti (Target)
+DANN_SOURCE_DIR      = os.path.join(DATA_DIR, "source_domain")     # Pediatrico (Source)
+DANN_TARGET_DIR      = os.path.join(DATA_DIR, "target_domain")  # Adulti (Target)
 DANN_IMG_SIZE        = 128          # Allineato a RESNET_IMG_SIZE per un confronto equo
 DANN_BATCH_SIZE      = 32          # Per dominio (total batch = 64)
 DANN_EPOCHS          = 50
