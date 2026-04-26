@@ -44,7 +44,7 @@ GAN_VAL_RESNET_EPOCHS = 5       # epoche ResNet ridotte per validazione periodic
 # ─── DANN (Domain Adaptation) ────────────────────────────
 DANN_SOURCE_DIR      = os.path.join(DATA_DIR, "Mooney_Augmented")     # Pediatrico (Source)
 DANN_TARGET_DIR      = os.path.join(DATA_DIR, "NIH_Target_DA_Ready")  # Adulti (Target)
-DANN_IMG_SIZE        = 224          # Nativo per ResNet-18
+DANN_IMG_SIZE        = 128          # Allineato a RESNET_IMG_SIZE per un confronto equo
 DANN_BATCH_SIZE      = 32          # Per dominio (total batch = 64)
 DANN_EPOCHS          = 50
 DANN_LR_FEATURE      = 1e-4        # LR basso per backbone pretrained

@@ -88,8 +88,8 @@ def train_dann(model, source_loader, target_loader, device,
     model = model.to(device)
 
     # ── Optimizer Adam con LR differenziati ──
-    # Il Feature Extractor (pretrained) usa un LR 10× più basso
-    # per non distruggere le feature apprese su ImageNet.
+    # Il Feature Extractor (source-pretrained) usa un LR 10× più basso
+    # per non distruggere le feature già apprese sul Source domain.
     optimizer = optim.Adam([
         {'params': model.feature_extractor.parameters(), 'lr': lr_feature},
         {'params': model.label_predictor.parameters(),   'lr': lr_classifier},
@@ -242,6 +242,11 @@ def train_dann(model, source_loader, target_loader, device,
     if best_weights is not None:
         model.load_state_dict(best_weights)
         torch.save(best_weights, ckpt_path)
+    else:
+        # Fallback: nessuna validazione disponibile → salva lo stato finale
+        best_weights = {k: v.clone() for k, v in model.state_dict().items()}
+        torch.save(best_weights, ckpt_path)
+        print(f"\n  ⚠️  Nessuna val loader: salvato stato finale come checkpoint.")
     print(f"\n  Best Target Val Macro F1: {best_target_f1:.4f}")
     print(f"  Checkpoint salvato in: {ckpt_path}")
 
@@ -267,7 +272,7 @@ def _quick_eval(model, loader, device):
             class_out, _, _ = model(x, lambda_=0.0)
             _, pred = torch.max(class_out, 1)
             all_preds.extend(pred.cpu().numpy())
-            all_labels.extend(y.numpy())
+            all_labels.extend(y.cpu().numpy())
 
     model.train()  # Torna in training mode
 

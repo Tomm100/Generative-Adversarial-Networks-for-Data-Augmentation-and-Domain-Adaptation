@@ -50,7 +50,7 @@ def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
     Args:
         source_dir: root del Source dataset (con sottocartelle train/, val/, test/)
         target_dir: root del Target dataset (con sottocartelle train/, val/, test/)
-        img_size: dimensione immagini (224 per ResNet-18)
+        img_size: dimensione immagini (default 128, allineato a DANN_IMG_SIZE)
         batch_size: batch size per singolo dominio (il batch totale sarà 2×batch_size)
 
     Returns:
@@ -126,3 +126,39 @@ def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
     return (source_train_loader, target_train_loader,
             target_val_loader, target_test_loader,
             source_train.classes)
+
+
+def _make_target_test_loader(target_dir, img_size=128, batch_size=32):
+    """
+    Crea un DataLoader standalone per il Target test set a una risoluzione specifica.
+
+    Utile per valutare la ResNet pretrainata sul Target con una risoluzione arbitraria.
+
+    Args:
+        target_dir: root del Target dataset (con sottocartella test/)
+        img_size: dimensione immagini
+        batch_size: batch size
+
+    Returns:
+        (target_test_loader, class_names)
+    """
+    transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+
+    target_test = datasets.ImageFolder(
+        root=os.path.join(target_dir, 'test'), transform=transform)
+
+    target_test_loader = DataLoader(
+        target_test, batch_size=batch_size,
+        shuffle=False, num_workers=2
+    )
+
+    print(f"\n  Target Test Loader ({img_size}×{img_size}): {len(target_test)} samples")
+
+    return target_test_loader, target_test.classes
