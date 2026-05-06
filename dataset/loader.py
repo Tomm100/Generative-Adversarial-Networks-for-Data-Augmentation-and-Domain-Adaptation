@@ -62,11 +62,24 @@ def setup_dataset(dataset_dir='./data/modified_dataset'):
 def get_dataloaders(train_dir, val_dir, test_dir, img_size=128, batch_size=16):
     """
     Restituisce i DataLoader per ResNet (RGB convertiti nativamente da ImageFolder).
+
+    Normalizzazione con statistiche ImageNet (mean/std del dataset su cui ResNet
+    è pre-addestrata). Questo è fondamentale per evitare uno shock distributivo
+    quando i pesi vengono trasferiti al backbone DANN/CDAN, che usa la stessa
+    normalizzazione ImageNet.
+
+    NOTA: get_gan_dataloader usa intenzionalmente mean=0.5/std=0.5 perché la
+    WGAN-GP opera nel range [-1, 1]. Le due normalizzazioni NON si mescolano:
+    il GAN lavora su tensori, mentre il confronto tra immagini reali e generate
+    avviene sempre dopo conversione a PNG/JPEG.
     """
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],   # Statistiche ImageNet
+            std=[0.229, 0.224, 0.225]
+        )
     ])
 
     train_dataset = datasets.ImageFolder(root=train_dir, transform=transform)
