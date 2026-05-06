@@ -8,7 +8,7 @@ class Generator(nn.Module):
     Generator 128x128 per conditional WGAN-GP.
     Flow: z(1x1) -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
     """
-    def __init__(self, nz=100, n_class=2, nc=1, d=128):
+    def __init__(self, nz=100, n_class=2, nc=1, d=64):
         super().__init__()
         self.deconv1_1 = nn.ConvTranspose2d(nz, d*4, 4, 1, 0)
         self.deconv1_1_bn = nn.BatchNorm2d(d*4)
