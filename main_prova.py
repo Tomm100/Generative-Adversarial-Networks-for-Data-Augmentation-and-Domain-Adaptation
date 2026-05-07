@@ -30,8 +30,9 @@ from train import train_resnet
 from utils.seed import set_seed
 
 
-# Path dei pesi GAN dal run precedente (cartella rinominata dall'utente)
-PREV_GAN_CHECKPOINTS_DIR = "./results_with_norm/gan_checkpoints"
+# Path dei pesi GAN dal run precedente (su Google Drive montato in Colab)
+# Modifica questo path se la struttura del Drive è diversa
+PREV_GAN_CHECKPOINTS_DIR = "/content/drive/MyDrive/progettoMLVM/results_with_norm/gan_checkpoints"
 
 # Directory dedicate per questo esperimento (non sovrascrive i risultati originali)
 EXP_DIR = os.path.join(RESULTS_DIR, "experiment_jpeg")
