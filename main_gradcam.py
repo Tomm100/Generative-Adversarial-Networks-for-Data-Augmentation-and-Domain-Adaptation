@@ -34,6 +34,10 @@ CKPT = "./results/experiment_augmentation/checkpoints/best_model_Exp_Phase3.pth"
 # Normalizzazione usata quando il modello è stato addestrato: "imagenet" o "0.5"
 NORM = "imagenet"
 
+# (Opzionale) Cartella del dataset ORIGINALE per il confronto baseline
+# Lascia stringa vuota "" per saltare il gruppo baseline
+BASELINE_DIR = "./data/modified_dataset/test/NORMAL"
+
 # ──────────────────────────────────────────────────────────────
 #  NON TOCCARE SOTTO
 # ──────────────────────────────────────────────────────────────
@@ -128,46 +132,59 @@ def main():
     gc = GradCAM(model)
     print(f"Modello caricato: {CKPT}")
 
-    # Separa reali e sintetiche
-    real_paths, syn_paths = pick_images(IMG_DIR, prefix_syn="syn_", n=NUM_EACH)
-    print(f"Reali trovate:      {len(real_paths)}")
-    print(f"Sintetiche trovate: {len(syn_paths)}")
-
-    if not real_paths and not syn_paths:
-        print("ERRORE: nessuna immagine trovata"); sys.exit(1)
-
     # Inferisci la classe dalla cartella (NORMAL o PNEUMONIA)
     folder_name = os.path.basename(IMG_DIR).upper()
     true_cls = 0 if "NORMAL" in folder_name else 1
 
-    # Calcola Grad-CAM
-    real_res = process(real_paths, model, gc, tf, mean_t, std_t, device)
-    syn_res  = process(syn_paths,  model, gc, tf, mean_t, std_t, device)
+    # ── Separa reali e sintetiche dalla cartella augmented ──
+    real_paths, syn_paths = pick_images(IMG_DIR, prefix_syn="syn_", n=NUM_EACH)
+    print(f"Reali trovate:      {len(real_paths)}")
+    print(f"Sintetiche trovate: {len(syn_paths)}")
 
-    # Plot: 4 righe × max(5,5) colonne
-    # riga 0: reali originali | riga 1: reali gradcam
-    # riga 2: sintetiche originali | riga 3: sintetiche gradcam
-    n = max(len(real_res), len(syn_res), 1)
-    fig, axes = plt.subplots(4, n, figsize=(n * 3, 10))
-    if n == 1:
-        axes = axes.reshape(4, 1)
+    # ── Baseline originale (opzionale) ──
+    baseline_paths = []
+    if BASELINE_DIR and os.path.exists(BASELINE_DIR):
+        baseline_paths = sorted(
+            glob.glob(os.path.join(BASELINE_DIR, '*.jpeg')) +
+            glob.glob(os.path.join(BASELINE_DIR, '*.jpg')) +
+            glob.glob(os.path.join(BASELINE_DIR, '*.png'))
+        )[:NUM_EACH]
+        print(f"Baseline trovate:   {len(baseline_paths)}")
+    elif BASELINE_DIR:
+        print(f"ATTENZIONE: BASELINE_DIR non trovato → {BASELINE_DIR}")
 
+    # ── Calcola Grad-CAM ──
+    base_res = process(baseline_paths, model, gc, tf, mean_t, std_t, device)
+    real_res  = process(real_paths,     model, gc, tf, mean_t, std_t, device)
+    syn_res   = process(syn_paths,      model, gc, tf, mean_t, std_t, device)
+
+    # ── Costruisci la lista gruppi da plottare ──
+    groups = []
+    if base_res:
+        groups.append(("BASELINE\n(test originale)", base_res))
     if real_res:
-        plot_group(axes[0], axes[1], real_res, "REALI", true_cls)
-    else:
-        for ax in list(axes[0]) + list(axes[1]):
-            ax.set_visible(False)
-
+        groups.append(("REALI\n(augmented)", real_res))
     if syn_res:
-        plot_group(axes[2], axes[3], syn_res, "SINTETICHE", true_cls)
-    else:
-        for ax in list(axes[2]) + list(axes[3]):
-            ax.set_visible(False)
+        groups.append(("SINTETICHE", syn_res))
 
-    # Etichette righe
-    for ax, lbl in zip([axes[0,0], axes[1,0], axes[2,0], axes[3,0]],
-                       ["img", "cam", "img", "cam"]):
-        ax.set_ylabel(ax.get_ylabel() or lbl, fontsize=8)
+    if not groups:
+        print("ERRORE: nessuna immagine trovata"); sys.exit(1)
+
+    # ── Plot: 2 righe per gruppo × n colonne ──
+    n_groups = len(groups)
+    n_cols   = NUM_EACH
+    n_rows   = n_groups * 2
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 3, n_groups * 5))
+    if n_cols == 1:
+        axes = axes.reshape(n_rows, 1)
+    if n_rows == 2:
+        axes = axes.reshape(2, n_cols)
+
+    for g_idx, (label, results) in enumerate(groups):
+        row0 = g_idx * 2
+        row1 = g_idx * 2 + 1
+        plot_group(axes[row0], axes[row1], results, label, true_cls)
 
     folder_label = os.path.basename(IMG_DIR)
     fig.suptitle(f"Grad-CAM — {folder_label}  |  Verde=corretto, Rosso=errore",
@@ -183,3 +200,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
