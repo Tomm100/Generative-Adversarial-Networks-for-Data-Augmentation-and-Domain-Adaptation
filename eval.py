@@ -90,8 +90,16 @@ def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class,
                     img = fakes[i].cpu()
                     img = (img + 1) / 2.0  # [-1,1] -> [0,1]
                     img_pil = transforms.ToPILImage()(img)
-                    img_rgb = img_pil.convert('RGB') # 128x128 
-                    img_rgb.save(os.path.join(syn_dir, cls_name, f'syn_{cls_name}_{generated+i}.png'))
+                    # Salva come JPEG (stesso formato delle immagini reali)
+                    # per evitare che la differenza PNG vs JPEG crei un
+                    # "fingerprint" sfruttabile dal classificatore.
+                    # convert('RGB') necessario perché ResNet si aspetta 3 canali
+                    # e ImageFolder carica in RGB di default.
+                    img_rgb = img_pil.convert('RGB')
+                    img_rgb.save(
+                        os.path.join(syn_dir, cls_name, f'syn_{cls_name}_{generated+i}.jpeg'),
+                        quality=95
+                    )
 
                 generated += batch_sz
 
