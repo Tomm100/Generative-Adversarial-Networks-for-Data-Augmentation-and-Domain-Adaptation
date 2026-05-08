@@ -159,8 +159,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
     D.weight_init(0.0, 0.02)
 
     # --- Ottimizzatori + LR Scheduler ---
-    G_opt = optim.Adam(G.parameters(), lr=lr, betas=(0.5, 0.9))
-    D_opt = optim.Adam(D.parameters(), lr=lr, betas=(0.5, 0.9))
+    G_opt = optim.Adam(G.parameters(), lr=lr, betas=(0.0, 0.9))
+    D_opt = optim.Adam(D.parameters(), lr=lr, betas=(0.0, 0.9), weight_decay=1e-3)
 
     # Decadimento lineare del learning rate verso 0 (come da paper WGAN-GP)
     G_scheduler = optim.lr_scheduler.LinearLR(G_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)

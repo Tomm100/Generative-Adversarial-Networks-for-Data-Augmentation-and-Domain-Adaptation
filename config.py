@@ -27,7 +27,7 @@ RESNET_NUM_CLASSES = 2
 
 # ─── WGAN-GP ─────────────────────────────────────────────
 GAN_IMG_SIZE    = 128
-GAN_BATCH_SIZE  = 64
+GAN_BATCH_SIZE  = 128
 GAN_EPOCHS      = 300
 GAN_LR          = 0.0001
 GAN_N_CRITIC    = 5
