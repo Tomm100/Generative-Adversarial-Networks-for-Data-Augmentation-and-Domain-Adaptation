@@ -61,5 +61,10 @@ DANN_LR_CLASSIFIER   = 1e-3        # LR alto per classificatori (10×)
 DANN_BETA1           = 0.5         # β₁ ridotto per stabilità con GRL
 DANN_CHECKPOINTS_DIR = os.path.join(RESULTS_DIR, "dann_checkpoints")
 
+# ─── DataLoader ──────────────────────────────────────────
+NUM_WORKERS        = 4     # Worker CPU per prefetching (consigliato >= 4 su A100)
+PIN_MEMORY         = True  # Trasferimento asincrono CPU→GPU via DMA (richiede CUDA)
+PERSISTENT_WORKERS = True  # Mantieni i worker tra le epoche (evita re-spawn)
+
 # ─── Riproducibilità ─────────────────────────────────────
 SEED = 42

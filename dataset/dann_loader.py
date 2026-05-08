@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, WeightedRandomSampler
+from config import NUM_WORKERS, PIN_MEMORY, PERSISTENT_WORKERS
 
 
 def _make_balanced_sampler(dataset, num_samples):
@@ -89,20 +90,24 @@ def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
     # ── DataLoader ──
     source_train_loader = DataLoader(
         source_train, batch_size=batch_size,
-        sampler=source_sampler, drop_last=True, num_workers=2
-    )
+        sampler=source_sampler, drop_last=True,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
     target_train_loader = DataLoader(
         target_train, batch_size=batch_size,
-        sampler=target_sampler, drop_last=True, num_workers=2
-    )
+        sampler=target_sampler, drop_last=True,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
     target_val_loader = DataLoader(
         target_val, batch_size=batch_size,
-        shuffle=False, num_workers=2
-    )
+        shuffle=False,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
     target_test_loader = DataLoader(
         target_test, batch_size=batch_size,
-        shuffle=False, num_workers=2
-    )
+        shuffle=False,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
 
     # ── Stampa info ──
     source_labels = [l for _, l in source_train.samples]
@@ -156,8 +161,9 @@ def _make_target_test_loader(target_dir, img_size=128, batch_size=32):
 
     target_test_loader = DataLoader(
         target_test, batch_size=batch_size,
-        shuffle=False, num_workers=2
-    )
+        shuffle=False,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
 
     print(f"\n  Target Test Loader ({img_size}×{img_size}): {len(target_test)} samples")
 

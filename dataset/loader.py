@@ -1,9 +1,11 @@
 import torch
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import os
 import json
 import zipfile
+import numpy as np
+from config import NUM_WORKERS, PIN_MEMORY, PERSISTENT_WORKERS
 
 
 def setup_dataset(dataset_dir='./data/modified_dataset'):
@@ -86,9 +88,18 @@ def get_dataloaders(train_dir, val_dir, test_dir, img_size=128, batch_size=16):
     val_dataset = datasets.ImageFolder(root=val_dir, transform=transform)
     test_dataset = datasets.ImageFolder(root=test_dir, transform=transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
 
     return train_loader, val_loader, test_loader, train_dataset.classes
 
@@ -98,9 +109,7 @@ def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
     Restituisce il DataLoader per il GAN WGAN-GP (1 canale Grayscale, 128x128).
     Utilizza un WeightedRandomSampler per bilanciare i batch a 50/50 tra classi.
     """
-    import numpy as np
-    from torch.utils.data import WeightedRandomSampler
-
+    
     gan_transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.Grayscale(num_output_channels=1),
@@ -125,5 +134,8 @@ def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
     n_per_class = {gan_dataset.classes[i]: int(c) for i, c in enumerate(class_counts)}
     print(f"  GAN dataloader: {n_per_class} — batch bilanciati 50/50 con WeightedRandomSampler")
 
-    gan_loader = DataLoader(gan_dataset, batch_size=batch_size, sampler=sampler, drop_last=True)
+    gan_loader = DataLoader(
+        gan_dataset, batch_size=batch_size, sampler=sampler, drop_last=True,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS)
     return gan_loader, gan_dataset.classes
