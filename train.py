@@ -11,10 +11,10 @@ from tqdm import tqdm
 from config import (
     CHECKPOINTS_DIR, RESNET_LR,
     GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY,
-    GAN_EPSILON_PENALTY_COEFF, GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD,
-    GAN_NUM_VIS_SAMPLES,
+    GAN_EPSILON_PENALTY_COEFF, GAN_NUM_VIS_SAMPLES,
 )
 from models.resnet import ResNetClassifier
+from models.wgan import weights_init
 from utils.visualization import save_gan_samples
 
 def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Phase1"):
@@ -162,8 +162,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         print("  ⚠️  Validazione periodica disabilitata: train_dir o val_dir non forniti")
 
     # --- Inizializzazione pesi ---
-    G.weight_init(GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD)
-    D.weight_init(GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD)
+    G.apply(weights_init)
+    D.apply(weights_init)
 
     # --- Ottimizzatori + LR Scheduler ---
     G_opt = optim.Adam(G.parameters(), lr=lr, betas=(beta1, beta2))

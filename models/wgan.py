@@ -3,6 +3,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import grad as torch_grad
 
+
+def weights_init(m):
+    """
+    Inizializzazione rigorosa dei pesi per Generator e Critic della WGAN-GP.
+    Da usare con: G.apply(weights_init) e D.apply(weights_init).
+
+    Logica:
+      - Conv2d / ConvTranspose2d : pesi ~ N(0.0, 0.02),  bias = 0
+      - InstanceNorm2d / BatchNorm2d (affine=True):
+            weight (γ) ~ N(1.0, 0.02)   ← media 1 per non annullare la normalizzazione
+            bias   (β) = 0
+    """
+    classname = m.__class__.__name__
+    if 'Conv' in classname:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
+    elif 'Norm' in classname and hasattr(m, 'weight') and m.weight is not None:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
 class Generator(nn.Module):
     """
     Generator 128x128 per conditional WGAN-GP.
@@ -27,11 +48,6 @@ class Generator(nn.Module):
         self.deconv5_bn = nn.BatchNorm2d(d//2)
         
         self.deconv6 = nn.ConvTranspose2d(d//2, nc, 4, 2, 1)
-
-    def weight_init(self, mean, std):
-        for m in self._modules:
-            if isinstance(self._modules[m], (nn.ConvTranspose2d, nn.Conv2d)):
-                self._modules[m].weight.data.normal_(mean, std)
 
     def forward(self, z, label):
         # Concatena rumore e label spazialmente
@@ -68,11 +84,6 @@ class Critic(nn.Module):
         self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
         
         self.conv6 = nn.Conv2d(d*8, 1, 4, 1, 0)
-
-    def weight_init(self, mean, std):
-        for m in self._modules:
-            if isinstance(self._modules[m], (nn.ConvTranspose2d, nn.Conv2d)):
-                self._modules[m].weight.data.normal_(mean, std)
 
     def forward(self, img, label):
         # Concatena immagine e mappa condizionale
