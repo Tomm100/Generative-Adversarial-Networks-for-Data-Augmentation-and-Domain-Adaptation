@@ -91,7 +91,6 @@ def main():
         G, D, gan_loader, device, compute_gp,
         epochs=GAN_EPOCHS,
         lr=GAN_LR, n_critic=GAN_N_CRITIC, nz=GAN_NZ, n_class=GAN_N_CLASS,
-        lr_milestones=GAN_LR_MILESTONES, lr_gamma=GAN_LR_GAMMA,
         save_every=GAN_SAVE_EVERY,
         models_dir=GAN_CHECKPOINTS_DIR,
         samples_dir=GAN_SAMPLES_DIR,

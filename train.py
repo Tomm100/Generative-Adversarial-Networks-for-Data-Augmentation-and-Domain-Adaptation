@@ -101,7 +101,6 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
 def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                  epochs=100,
                  lr=0.0001, n_critic=5, nz=100, n_class=2,
-                 lr_milestones=None, lr_gamma=0.2,
                  save_every=20,
                  models_dir='gan_checkpoints',
                  samples_dir='gan_samples',
@@ -129,8 +128,6 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         lr:                 learning rate base
         n_critic:           rapporto aggiornamenti critic/generator
         nz, n_class:        config GAN
-        lr_milestones:      epoche in cui applicare il decay (default: [60, 80])
-        lr_gamma:           fattore decay (default: 0.2)
         save_every:         salva checkpoint ogni N epoche
         models_dir:         cartella checkpoint G/D
         samples_dir:        cartella sample visivi
@@ -151,9 +148,6 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(samples_dir, exist_ok=True)
 
-    if lr_milestones is None:
-        lr_milestones = [60, 80]
-
     # Controlla se la validazione periodica è attivabile
     val_enabled = (validate_every > 0 and train_dir is not None
                    and val_dir is not None)
@@ -165,11 +159,12 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
     D.weight_init(0.0, 0.02)
 
     # --- Ottimizzatori + LR Scheduler ---
-    G_opt = optim.Adam(G.parameters(), lr=lr, betas=(0.0, 0.9))
-    D_opt = optim.Adam(D.parameters(), lr=lr, betas=(0.0, 0.9))
+    G_opt = optim.Adam(G.parameters(), lr=lr, betas=(0.5, 0.9))
+    D_opt = optim.Adam(D.parameters(), lr=lr, betas=(0.5, 0.9))
 
-    G_scheduler = optim.lr_scheduler.MultiStepLR(G_opt, milestones=lr_milestones, gamma=lr_gamma)
-    D_scheduler = optim.lr_scheduler.MultiStepLR(D_opt, milestones=lr_milestones, gamma=lr_gamma)
+    # Decadimento lineare del learning rate verso 0 (come da paper WGAN-GP)
+    G_scheduler = optim.lr_scheduler.LinearLR(G_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
+    D_scheduler = optim.lr_scheduler.LinearLR(D_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
 
     # --- (RESUME — disattivato per ora) ---
     # Per riattivare il resume, aggiungere i parametri start_epoch, g_ckpt_path,
@@ -207,8 +202,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
 
     # --- Training loop ---
     print(f"\nTraining WGAN-GP: {epochs} epoche")
-    print(f"  LR: {lr}, n_critic={n_critic}")
-    print(f"  LR decay: x{lr_gamma} alle epoche {lr_milestones}")
+    print(f"  LR: {lr} (LinearLR verso 0), n_critic={n_critic}")
     if val_enabled:
         print(f"  Validazione ogni {validate_every} epoche "
               f"(ResNet {resnet_epochs} ep.)")
@@ -230,11 +224,13 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             D_real = D(x_, y_fill).squeeze().mean()
 
             z = torch.randn(mb, nz, 1, 1).to(device)
-            y_gen = torch.randint(0, n_class, (mb,)).to(device)
-            fake = G(z, onehot[y_gen])
-            D_fake = D(fake.detach(), fill[y_gen]).squeeze().mean()
+            # CRITICAL FIX: Genera i fake con la stessa label delle immagini reali
+            # per non corrompere la matematica della Gradient Penalty
+            y_gen_critic = y_
+            fake = G(z, onehot[y_gen_critic])
+            D_fake = D(fake.detach(), y_fill).squeeze().mean()
 
-            gp, _ = compute_gp_fn(D, x_, fake.detach(), y_fill, fill[y_gen], device)
+            gp, _ = compute_gp_fn(D, x_, fake.detach(), y_fill, y_fill, device)
             # Epsilon drift penalty: evita che i logit del Critic divergano
             epsilon_penalty = 1e-3 * (D_real ** 2).mean()
             d_loss = D_fake - D_real + gp + epsilon_penalty

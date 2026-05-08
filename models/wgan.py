@@ -6,22 +6,26 @@ from torch.autograd import grad as torch_grad
 class Generator(nn.Module):
     """
     Generator 128x128 per conditional WGAN-GP.
-    Flow: z(1x1) -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
+    Flow: z(1x1) + label(1x1) -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
     """
     def __init__(self, nz=100, n_class=2, nc=1, d=64):
         super().__init__()
-        self.deconv1_1 = nn.ConvTranspose2d(nz, d*4, 4, 1, 0)
-        self.deconv1_1_bn = nn.BatchNorm2d(d*4)
-        self.deconv1_2 = nn.ConvTranspose2d(n_class, d*4, 4, 1, 0)
-        self.deconv1_2_bn = nn.BatchNorm2d(d*4)
+        # Concatenate z and label at the input
+        self.deconv1 = nn.ConvTranspose2d(nz + n_class, d*8, 4, 1, 0)
+        self.deconv1_bn = nn.BatchNorm2d(d*8)
+        
         self.deconv2 = nn.ConvTranspose2d(d*8, d*4, 4, 2, 1)
         self.deconv2_bn = nn.BatchNorm2d(d*4)
+        
         self.deconv3 = nn.ConvTranspose2d(d*4, d*2, 4, 2, 1)
         self.deconv3_bn = nn.BatchNorm2d(d*2)
+        
         self.deconv4 = nn.ConvTranspose2d(d*2, d, 4, 2, 1)
         self.deconv4_bn = nn.BatchNorm2d(d)
+        
         self.deconv5 = nn.ConvTranspose2d(d, d//2, 4, 2, 1)
         self.deconv5_bn = nn.BatchNorm2d(d//2)
+        
         self.deconv6 = nn.ConvTranspose2d(d//2, nc, 4, 2, 1)
 
     def weight_init(self, mean, std):
@@ -30,9 +34,10 @@ class Generator(nn.Module):
                 self._modules[m].weight.data.normal_(mean, std)
 
     def forward(self, z, label):
-        x = F.relu(self.deconv1_1_bn(self.deconv1_1(z)))
-        y = F.relu(self.deconv1_2_bn(self.deconv1_2(label)))
-        x = torch.cat([x, y], 1)
+        # Concatena rumore e label spazialmente
+        x = torch.cat([z, label], 1)
+        
+        x = F.relu(self.deconv1_bn(self.deconv1(x)))
         x = F.relu(self.deconv2_bn(self.deconv2(x)))
         x = F.relu(self.deconv3_bn(self.deconv3(x)))
         x = F.relu(self.deconv4_bn(self.deconv4(x)))
@@ -43,20 +48,25 @@ class Generator(nn.Module):
 class Critic(nn.Module):
     """
     Critic 128x128 per conditional WGAN-GP.
-    Flow: 128x128 -> 64x64 -> 32x32 -> 16x16 -> 8x8 -> 4x4 -> 1x1
+    Flow: img(128x128) + label(128x128) -> 64x64 -> 32x32 -> 16x16 -> 8x8 -> 4x4 -> 1x1
     """
     def __init__(self, nc=1, n_class=2, d=128):
         super().__init__()
-        self.conv1_1 = nn.Conv2d(nc, d//2, 4, 2, 1)
-        self.conv1_2 = nn.Conv2d(n_class, d//2, 4, 2, 1)
+        # Concatenate img and label at the input
+        self.conv1 = nn.Conv2d(nc + n_class, d, 4, 2, 1)
+        
         self.conv2 = nn.Conv2d(d, d*2, 4, 2, 1)
-        self.conv2_ln = nn.LayerNorm([d*2, 32, 32])
+        self.conv2_in = nn.InstanceNorm2d(d*2, affine=True)
+        
         self.conv3 = nn.Conv2d(d*2, d*4, 4, 2, 1)
-        self.conv3_ln = nn.LayerNorm([d*4, 16, 16])
+        self.conv3_in = nn.InstanceNorm2d(d*4, affine=True)
+        
         self.conv4 = nn.Conv2d(d*4, d*8, 4, 2, 1)
-        self.conv4_ln = nn.LayerNorm([d*8, 8, 8])
+        self.conv4_in = nn.InstanceNorm2d(d*8, affine=True)
+        
         self.conv5 = nn.Conv2d(d*8, d*8, 4, 2, 1)
-        self.conv5_ln = nn.LayerNorm([d*8, 4, 4])
+        self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
+        
         self.conv6 = nn.Conv2d(d*8, 1, 4, 1, 0)
 
     def weight_init(self, mean, std):
@@ -65,13 +75,14 @@ class Critic(nn.Module):
                 self._modules[m].weight.data.normal_(mean, std)
 
     def forward(self, img, label):
-        x = F.leaky_relu(self.conv1_1(img), 0.2)
-        y = F.leaky_relu(self.conv1_2(label), 0.2)
-        x = torch.cat([x, y], 1)
-        x = F.leaky_relu(self.conv2_ln(self.conv2(x)), 0.2)
-        x = F.leaky_relu(self.conv3_ln(self.conv3(x)), 0.2)
-        x = F.leaky_relu(self.conv4_ln(self.conv4(x)), 0.2)
-        x = F.leaky_relu(self.conv5_ln(self.conv5(x)), 0.2)
+        # Concatena immagine e mappa condizionale
+        x = torch.cat([img, label], 1)
+        
+        x = F.leaky_relu(self.conv1(x), 0.2)
+        x = F.leaky_relu(self.conv2_in(self.conv2(x)), 0.2)
+        x = F.leaky_relu(self.conv3_in(self.conv3(x)), 0.2)
+        x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)
+        x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)
         return self.conv6(x)
 
 def compute_gp(D, real, fake, real_lbl, fake_lbl, device, lambda_gp=10):

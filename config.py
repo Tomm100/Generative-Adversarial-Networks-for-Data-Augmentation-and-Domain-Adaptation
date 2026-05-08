@@ -28,16 +28,16 @@ RESNET_NUM_CLASSES = 2
 # ─── WGAN-GP ─────────────────────────────────────────────
 GAN_IMG_SIZE    = 128
 GAN_BATCH_SIZE  = 64
-GAN_EPOCHS      = 100
+GAN_EPOCHS      = 300
 GAN_LR          = 0.0001
 GAN_N_CRITIC    = 5
 GAN_NZ          = 100
 GAN_N_CLASS     = 2
 GAN_NC          = 1
-GAN_D           = 64
+GAN_D           = 128
 GAN_SAVE_EVERY  = 10
-GAN_LR_MILESTONES = [60, 80]
-GAN_LR_GAMMA    = 0.2           # equivale a dividere per 5
+# GAN_LR_MILESTONES = [60, 80]  # Non più in uso (WGAN-GP ora usa LinearLR continuo verso 0)
+# GAN_LR_GAMMA    = 0.2         # Non più in uso
 GAN_VALIDATE_EVERY = 10         # validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS = 5       # epoche ResNet ridotte per validazione periodica
 
