@@ -8,7 +8,12 @@ import wandb
 from sklearn.metrics import f1_score
 from tqdm import tqdm
 
-from config import CHECKPOINTS_DIR, GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY, RESNET_LR
+from config import (
+    CHECKPOINTS_DIR, RESNET_LR,
+    GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY,
+    GAN_EPSILON_PENALTY_COEFF, GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD,
+    GAN_NUM_VIS_SAMPLES,
+)
 from models.resnet import ResNetClassifier
 from utils.visualization import save_gan_samples
 
@@ -157,8 +162,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         print("  ⚠️  Validazione periodica disabilitata: train_dir o val_dir non forniti")
 
     # --- Inizializzazione pesi ---
-    G.weight_init(0.0, 0.02)
-    D.weight_init(0.0, 0.02)
+    G.weight_init(GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD)
+    D.weight_init(GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD)
 
     # --- Ottimizzatori + LR Scheduler ---
     G_opt = optim.Adam(G.parameters(), lr=lr, betas=(beta1, beta2))
@@ -190,7 +195,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         fill[i, i, :, :] = 1
 
     # --- Fixed noise per visualizzare evoluzione ---
-    num_vis = 6
+    num_vis = GAN_NUM_VIS_SAMPLES
     fixed_z = torch.randn(num_vis * 2, nz, 1, 1).to(device)
     fixed_labels = torch.cat([
         onehot[torch.zeros(num_vis, dtype=torch.long).to(device)],
@@ -234,7 +239,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
 
             gp, _ = compute_gp_fn(D, x_, fake.detach(), y_fill, y_fill, device)
             # Epsilon drift penalty: evita che i logit del Critic divergano
-            epsilon_penalty = 1e-3 * (D_real ** 2).mean()
+            epsilon_penalty = GAN_EPSILON_PENALTY_COEFF * (D_real ** 2).mean()
             d_loss = D_fake - D_real + gp + epsilon_penalty
             d_loss.backward()
             D_opt.step()

@@ -6,6 +6,7 @@ import os
 from torchvision import transforms
 import wandb
 import torch.nn.functional as F
+from config import GAN_GEN_BATCH_SIZE, GAN_JPEG_QUALITY
 
 def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Phase1", out_dir='./results'):
     """
@@ -81,7 +82,7 @@ def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class,
 
             generated = 0
             while generated < num_gen:
-                batch_sz = min(64, num_gen - generated)
+                batch_sz = min(GAN_GEN_BATCH_SIZE, num_gen - generated)
                 z = torch.randn(batch_sz, nz, 1, 1).to(device)
                 labels = onehot[torch.full((batch_sz,), cls_idx, dtype=torch.long).to(device)]
                 fakes = G(z, labels)
@@ -98,7 +99,7 @@ def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class,
                     img_rgb = img_pil.convert('RGB')
                     img_rgb.save(
                         os.path.join(syn_dir, cls_name, f'syn_{cls_name}_{generated+i}.jpeg'),
-                        quality=95
+                        quality=GAN_JPEG_QUALITY
                     )
 
                 generated += batch_sz
