@@ -69,10 +69,13 @@ def compute_entropy_weights(softmax_probs: torch.Tensor,
     """
     Calcola i pesi per l'Entropy Conditioning (Long et al., 2018).
 
-    L'idea è che i campioni su cui il classificatore è già molto sicuro
+    L'idea è che i campioni Target su cui il classificatore è già molto sicuro
     (bassa entropia) forniscono un segnale più affidabile per il discriminatore
     di dominio → peso maggiore. I campioni ambigui (alta entropia) vengono
     attenuati per non inquinare l'allineamento.
+
+    Nota: secondo il paper CDAN, questo conditioning si applica SOLO al Target.
+    Il Source ha label reali e la sua domain loss è pesata uniformemente.
 
     Formula:
         H(ŷ) = -Σ_c  p_c · log(p_c + ε)           # entropia di Shannon
@@ -83,13 +86,12 @@ def compute_entropy_weights(softmax_probs: torch.Tensor,
         - H → log(C) (max entropia)  ⟹  w → 1 + exp(-log C) ≈ 1.0 (peso basso)
 
     Args:
-        softmax_probs: (B, num_classes) — probabilità softmax del classificatore.
-                       Devono essere già dopo softmax (valori in [0, 1]).
+        softmax_probs: (B, num_classes) — probabilità softmax del classificatore
+                       (solo Target). Devono essere già dopo softmax (∈ [0, 1]).
         epsilon:       piccolo valore per stabilità numerica nel log.
 
     Returns:
-        weights: (B,) — pesi per campione, detached dal computation graph
-                 (non vogliamo gradienti attraverso i pesi stessi).
+        weights: (B,) — pesi per campione, detached dal computation graph.
     """
     # Entropia di Shannon: (B,)
     entropy = -torch.sum(
@@ -233,11 +235,10 @@ def train_cdan(model, source_loader, target_loader, device,
             # ── Task Loss (solo Source) ──
             loss_class = criterion_class(class_out_s, y_s)
 
-            # ── Entropy Weights (Entropy Conditioning) ──
-            # Source: w_s ∈ (1, 2],  (B_s,)
-            w_s = compute_entropy_weights(probs_s)
-            # Target: w_t ∈ (1, 2],  (B_t,)
-            w_t = compute_entropy_weights(probs_t)
+            # ── Entropy Weights (Entropy Conditioning — solo Target) ──
+            # Secondo Long et al. (2018) il conditioning si applica esclusivamente
+            # al Target: il Source ha label reali e non necessita di weighting.
+            w_t = compute_entropy_weights(probs_t)  # (B_t,)
 
             # ── Domain Loss pesata per-campione ──
             # criterion_domain restituisce (B, 1) grazie a reduction='none'
@@ -246,8 +247,8 @@ def train_cdan(model, source_loader, target_loader, device,
             dom_loss_t = criterion_domain(domain_out_t, domain_label_t).squeeze(1)  # (B_t,)
 
             loss_domain = (
-                (w_s * dom_loss_s).mean() +
-                (w_t * dom_loss_t).mean()
+                dom_loss_s.mean() +              # Source: media uniforme
+                (w_t * dom_loss_t).mean()        # Target: pesata per entropia
             )
 
             # ── Total Loss ──
@@ -274,7 +275,7 @@ def train_cdan(model, source_loader, target_loader, device,
                 'cls': f"{loss_class.item():.3f}",
                 'dom': f"{loss_domain.item():.3f}",
                 'λ':   f"{lambda_p:.3f}",
-                'H_t': f"{H_t:.3f}",
+                'H_t': f"{H_t:.3f}",  # Entropia Target (quella che governa il weighting)
             })
 
         # ── Medie epoca ──

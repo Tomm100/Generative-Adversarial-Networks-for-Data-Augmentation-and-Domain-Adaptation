@@ -13,6 +13,7 @@ from config import (
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
     GAN_IMG_SIZE, GAN_BATCH_SIZE, GAN_EPOCHS, GAN_LR, GAN_N_CRITIC,
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, GAN_SAVE_EVERY,
+    GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY,
     GAN_VALIDATE_EVERY, GAN_VAL_RESNET_EPOCHS,
     SEED,
 )
@@ -41,6 +42,9 @@ def main():
             "gan_batch_size": GAN_BATCH_SIZE,
             "gan_epochs": GAN_EPOCHS,
             "gan_lr": GAN_LR,
+            "gan_beta1": GAN_BETA1,
+            "gan_beta2": GAN_BETA2,
+            "gan_d_weight_decay": GAN_D_WEIGHT_DECAY,
             "gan_n_critic": GAN_N_CRITIC,
             "gan_nz": GAN_NZ
         }
@@ -90,6 +94,7 @@ def main():
         G, D, gan_loader, device, compute_gp,
         epochs=GAN_EPOCHS,
         lr=GAN_LR, n_critic=GAN_N_CRITIC, nz=GAN_NZ, n_class=GAN_N_CLASS,
+        beta1=GAN_BETA1, beta2=GAN_BETA2, d_weight_decay=GAN_D_WEIGHT_DECAY,
         save_every=GAN_SAVE_EVERY,
         models_dir=GAN_CHECKPOINTS_DIR,
         samples_dir=GAN_SAMPLES_DIR,

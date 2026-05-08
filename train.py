@@ -8,7 +8,7 @@ import wandb
 from sklearn.metrics import f1_score
 from tqdm import tqdm
 
-from config import CHECKPOINTS_DIR
+from config import CHECKPOINTS_DIR, GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY, RESNET_LR
 from models.resnet import ResNetClassifier
 from utils.visualization import save_gan_samples
 
@@ -101,6 +101,8 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
 def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                  epochs=100,
                  lr=0.0001, n_critic=5, nz=100, n_class=2,
+                 beta1=GAN_BETA1, beta2=GAN_BETA2,
+                 d_weight_decay=GAN_D_WEIGHT_DECAY,
                  save_every=20,
                  models_dir='gan_checkpoints',
                  samples_dir='gan_samples',
@@ -159,8 +161,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
     D.weight_init(0.0, 0.02)
 
     # --- Ottimizzatori + LR Scheduler ---
-    G_opt = optim.Adam(G.parameters(), lr=lr, betas=(0.0, 0.9))
-    D_opt = optim.Adam(D.parameters(), lr=lr, betas=(0.0, 0.9), weight_decay=1e-3)
+    G_opt = optim.Adam(G.parameters(), lr=lr, betas=(beta1, beta2))
+    D_opt = optim.Adam(D.parameters(), lr=lr, betas=(beta1, beta2), weight_decay=d_weight_decay)
 
     # Decadimento lineare del learning rate verso 0 (come da paper WGAN-GP)
     G_scheduler = optim.lr_scheduler.LinearLR(G_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
@@ -384,7 +386,7 @@ def _run_augmented_validation(G, epoch, device, nz, n_class,
 
     _, hist, _ = train_resnet(
         aug_loader, val_loader, device,
-        epochs=resnet_epochs, lr=0.001, tag=f"AugVal_ep{epoch}")
+        epochs=resnet_epochs, lr=RESNET_LR, tag=f"AugVal_ep{epoch}")
 
     # Risultati
     best_f1 = max(hist['val_macro_f1'])

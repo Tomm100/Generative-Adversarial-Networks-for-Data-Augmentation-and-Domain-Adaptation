@@ -173,10 +173,10 @@ class CDAN_Model(nn.Module):
 
         # ── 2. Label Prediction ──
         class_logits = self.label_predictor(features)    # (B, 2)
-        softmax_probs = F.softmax(class_logits, dim=1)   # (B, 2)  — detached per evitare
-        # Nota: NON si esegue detach() sui softmax_probs: vogliamo che i gradienti
-        # fluiscano nel feature extractor sia via task loss che via multilinear map.
-        # Il GRL gestisce la direzione del gradiente per il discriminatore.
+        # NON si esegue detach() sui softmax_probs: i gradienti devono fluire
+        # nel feature extractor sia via task loss che via multilinear map.
+        # È il GRL a gestire l'inversione del gradiente per il discriminatore.
+        softmax_probs = F.softmax(class_logits, dim=1)   # (B, 2)
 
         # ── 3. Prodotto Multilineare (Conditional Coupling) ──
         multilinear = self._multilinear_map(features, softmax_probs)  # (B, 1024)
