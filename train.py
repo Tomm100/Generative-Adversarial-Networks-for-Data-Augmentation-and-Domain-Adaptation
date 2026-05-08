@@ -272,29 +272,34 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         elapsed = (time.time() - gan_start) / 60
         eta = (elapsed / epoch) * (epochs - epoch)
 
+        # Calcola metriche epoch-level (sempre, per log WandB completo)
+        w_dist = -np.mean(d_losses) if d_losses else 0
+        g_avg  = np.mean(g_losses)  if g_losses  else 0
+        d_avg  = np.mean(d_losses)  if d_losses  else 0
+        gp_avg = np.mean(gp_losses) if gp_losses else 0
+        eps_avg = np.mean(eps_losses) if eps_losses else 0
+
+        
+        log_dict = {
+            "GAN_Training/Wasserstein_Dist": w_dist,
+            "GAN_Training/Generator_Loss":   g_avg,
+            "GAN_Training/Critic_Loss":      d_avg,
+            "GAN_Training/Gradient_Penalty": gp_avg,
+            "GAN_Training/Epsilon_Penalty":  eps_avg,
+            "GAN_Training/LR_Generator":     new_lr,
+            "GAN_Training/Epoch":            epoch
+        }
+
+        
         if epoch % 5 == 0 or epoch == 1:
-            w_dist = -np.mean(d_losses) if d_losses else 0
-            g_avg = np.mean(g_losses) if g_losses else 0
-            d_avg = np.mean(d_losses) if d_losses else 0
-            gp_avg = np.mean(gp_losses) if gp_losses else 0
-            eps_avg = np.mean(eps_losses) if eps_losses else 0
             print(f"  [{epoch}/{epochs}] W_dist: {w_dist:.1f} | "
                   f"G_loss: {g_avg:.1f} | Time: {elapsed:.1f}m | ETA: {eta:.1f}m")
             save_gan_samples(G, fixed_z, fixed_labels, epoch, samples_dir, num_vis)
-
-            log_dict = {
-                "GAN_Training/Wasserstein_Dist": w_dist,
-                "GAN_Training/Generator_Loss": g_avg,
-                "GAN_Training/Critic_Loss": d_avg,
-                "GAN_Training/Gradient_Penalty": gp_avg,
-                "GAN_Training/Epsilon_Penalty": eps_avg,
-                "GAN_Training/LR_Generator": new_lr,
-                "GAN_Training/Epoch": epoch
-            }
             sample_img_path = os.path.join(samples_dir, f'samples_epoch_{epoch:03d}.png')
             if os.path.exists(sample_img_path):
                 log_dict["GAN_Samples/Generated_Images"] = wandb.Image(sample_img_path, caption=f"Epoch {epoch}")
-            wandb.log(log_dict)
+
+        wandb.log(log_dict)
 
         # --- Checkpoint ---
         if epoch % save_every == 0 or epoch == epochs:
