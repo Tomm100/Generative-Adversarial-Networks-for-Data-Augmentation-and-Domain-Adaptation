@@ -12,6 +12,7 @@ from config import (
     CHECKPOINTS_DIR, RESNET_LR,
     GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY,
     GAN_EPSILON_PENALTY_COEFF, GAN_NUM_VIS_SAMPLES,
+    GAN_DRIVE_BACKUP_EVERY, GAN_DRIVE_DIR,
 )
 from models.resnet import ResNetClassifier
 from models.wgan import weights_init
@@ -116,7 +117,10 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                  train_dir=None, val_dir=None, test_dir=None,
                  num_gen_normal=0, num_gen_pneumonia=0,
                  resnet_img_size=128, resnet_batch_size=32, resnet_epochs=5,
-                 augmented_dir='./augmented_dataset'):
+                 augmented_dir='./augmented_dataset',
+                 # --- Backup Google Drive ---
+                 drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
+                 drive_dir=GAN_DRIVE_DIR):
     """
     Allena WGAN-GP con validazione periodica.
 
@@ -301,13 +305,26 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
 
         wandb.log(log_dict)
 
-        # --- Checkpoint ---
+        # --- Checkpoint locale (ogni save_every epoche) ---
         if epoch % save_every == 0 or epoch == epochs:
             g_path = os.path.join(models_dir, f'G_epoch_{epoch}.pth')
             d_path = os.path.join(models_dir, f'D_epoch_{epoch}.pth')
             torch.save(G.state_dict(), g_path)
             torch.save(D.state_dict(), d_path)
-            print(f"  [Checkpoint] G + D salvati (ep.{epoch})")
+            print(f"  [Checkpoint] G + D salvati localmente (ep.{epoch})")
+
+            # --- Backup su Google Drive (ogni drive_backup_every epoche) ---
+            if (drive_dir and drive_backup_every > 0
+                    and epoch % drive_backup_every == 0):
+                if os.path.isdir(os.path.dirname(drive_dir)) or os.path.exists(drive_dir):
+                    import shutil
+                    os.makedirs(drive_dir, exist_ok=True)
+                    shutil.copy(g_path, os.path.join(drive_dir, f'G_epoch_{epoch}.pth'))
+                    shutil.copy(d_path, os.path.join(drive_dir, f'D_epoch_{epoch}.pth'))
+                    print(f"  [Drive Backup] G + D copiati su Drive (ep.{epoch}) → {drive_dir}")
+                    wandb.log({"GAN_Training/Drive_Backup_Epoch": epoch})
+                else:
+                    print(f"  [Drive Backup] ⚠️  Drive non montato, skip (ep.{epoch})")
 
         # --- Validazione periodica ---
         if val_enabled and epoch % validate_every == 0:

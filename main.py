@@ -14,7 +14,11 @@ from config import (
     GAN_IMG_SIZE, GAN_BATCH_SIZE, GAN_EPOCHS, GAN_LR, GAN_N_CRITIC,
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, GAN_SAVE_EVERY,
     GAN_BETA1, GAN_BETA2, GAN_D_WEIGHT_DECAY,
+    GAN_EPSILON_PENALTY_COEFF, GAN_WEIGHT_INIT_MEAN, GAN_WEIGHT_INIT_STD,
+    GAN_NUM_VIS_SAMPLES, GAN_GEN_BATCH_SIZE, GAN_JPEG_QUALITY,
     GAN_VALIDATE_EVERY, GAN_VAL_RESNET_EPOCHS,
+    GAN_DRIVE_BACKUP_EVERY, GAN_DRIVE_DIR,
+    NUM_WORKERS, PIN_MEMORY,
     SEED,
 )
 from dataset.loader import setup_dataset, get_dataloaders, get_gan_dataloader
@@ -30,25 +34,50 @@ def main():
     print(f"Avvio pipeline su Device: {device}")
 
     wandb.init(
-        project="gan-chest-xray-augmentation", # Nome del tuo progetto su WandB
+        project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
         config={
-            "seed": SEED,
-            "resnet_img_size": RESNET_IMG_SIZE,
-            "resnet_batch_size": RESNET_BATCH_SIZE,
-            "resnet_epochs": RESNET_EPOCHS,
-            "resnet_lr": RESNET_LR,
-            "gan_img_size": GAN_IMG_SIZE,
-            "gan_batch_size": GAN_BATCH_SIZE,
-            "gan_epochs": GAN_EPOCHS,
-            "gan_lr": GAN_LR,
-            "gan_beta1": GAN_BETA1,
-            "gan_beta2": GAN_BETA2,
-            "gan_d_weight_decay": GAN_D_WEIGHT_DECAY,
-            "gan_n_critic": GAN_N_CRITIC,
-            "gan_nz": GAN_NZ
+            "seed":                    SEED,
+            # ResNet
+            "resnet_img_size":         RESNET_IMG_SIZE,
+            "resnet_batch_size":       RESNET_BATCH_SIZE,
+            "resnet_epochs":           RESNET_EPOCHS,
+            "resnet_lr":               RESNET_LR,
+            # WGAN-GP
+            "gan_img_size":            GAN_IMG_SIZE,
+            "gan_batch_size":          GAN_BATCH_SIZE,
+            "gan_epochs":              GAN_EPOCHS,
+            "gan_lr":                  GAN_LR,
+            "gan_beta1":               GAN_BETA1,
+            "gan_beta2":               GAN_BETA2,
+            "gan_d_weight_decay":      GAN_D_WEIGHT_DECAY,
+            "gan_epsilon_penalty":     GAN_EPSILON_PENALTY_COEFF,
+            "gan_weight_init_mean":    GAN_WEIGHT_INIT_MEAN,
+            "gan_weight_init_std":     GAN_WEIGHT_INIT_STD,
+            "gan_n_critic":            GAN_N_CRITIC,
+            "gan_nz":                  GAN_NZ,
+            "gan_num_vis_samples":     GAN_NUM_VIS_SAMPLES,
+            "gan_gen_batch_size":      GAN_GEN_BATCH_SIZE,
+            "gan_jpeg_quality":        GAN_JPEG_QUALITY,
+            "gan_validate_every":      GAN_VALIDATE_EVERY,
+            "gan_val_resnet_epochs":   GAN_VAL_RESNET_EPOCHS,
+            "gan_drive_backup_every":  GAN_DRIVE_BACKUP_EVERY,
+            # DataLoader
+            "num_workers":             NUM_WORKERS,
+            "pin_memory":              PIN_MEMORY,
         }
     )
+
+    # Assi X personalizzati per ogni sezione: disaccoppia il contatore
+    # globale di WandB così i grafici di fasi diverse non si sovrappongono.
+    wandb.define_metric("Phase1/epoch")
+    wandb.define_metric("Phase1/*",         step_metric="Phase1/epoch")
+    wandb.define_metric("Phase3/epoch")
+    wandb.define_metric("Phase3/*",         step_metric="Phase3/epoch")
+    wandb.define_metric("GAN_Training/Epoch")
+    wandb.define_metric("GAN_Training/*",   step_metric="GAN_Training/Epoch")
+    wandb.define_metric("GAN_Val_TSTR/epoch")
+    wandb.define_metric("GAN_Val_TSTR/*",   step_metric="GAN_Val_TSTR/epoch")
 
     # --- 1. SETUP DATASET ---
     res = setup_dataset(dataset_dir=DATASET_DIR)
@@ -104,7 +133,10 @@ def main():
         num_gen_normal=num_gen_normal, num_gen_pneumonia=num_gen_pneumonia,
         resnet_img_size=RESNET_IMG_SIZE, resnet_batch_size=RESNET_BATCH_SIZE,
         resnet_epochs=GAN_VAL_RESNET_EPOCHS,
-        augmented_dir=AUGMENTED_DIR)
+        augmented_dir=AUGMENTED_DIR,
+        # Google Drive backup
+        drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
+        drive_dir=GAN_DRIVE_DIR)
 
     # --- 5. PHASE 3: RESNET AUGMENTED ---
     # Usa il best augmented dataset dalla validazione TSTR (se disponibile),
