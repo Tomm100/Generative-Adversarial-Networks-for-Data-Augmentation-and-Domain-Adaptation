@@ -130,3 +130,63 @@ def get_gan_dataloader(train_dir, img_size=128, batch_size=64):
         num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
         persistent_workers=PERSISTENT_WORKERS)
     return gan_loader, gan_dataset.classes
+
+
+def get_balanced_train_dataloader(train_dir, img_size=128, batch_size=32):
+    """
+    Restituisce un DataLoader di training bilanciato tramite WeightedRandomSampler.
+
+    Ogni campione viene estratto con probabilità inversamente proporzionale alla
+    frequenza della sua classe, in modo che NORMAL e PNEUMONIA vengano visti
+    con uguale frequenza attesa in ogni batch, senza usare dati GAN.
+
+    Il numero di campioni per epoca è pari alla dimensione reale del dataset
+    (replacement=True garantisce che la classe minoritaria venga ricampionata).
+
+    Args:
+        train_dir:   cartella root del training set (struttura ImageFolder)
+        img_size:    dimensione delle immagini (default 128)
+        batch_size:  dimensione del batch (default 32)
+
+    Returns:
+        (train_loader, class_names)
+    """
+    transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],   # Statistiche ImageNet
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+
+    train_dataset = datasets.ImageFolder(root=train_dir, transform=transform)
+
+    # ── Calcola pesi per campione (inverso della frequenza di classe) ──
+    labels = [label for _, label in train_dataset.samples]
+    class_counts = np.bincount(labels)
+    class_weights_arr = 1.0 / class_counts
+    sample_weights = [class_weights_arr[l] for l in labels]
+
+    # num_samples = len dataset → stessa lunghezza di un'epoca normale
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(train_dataset),
+        replacement=True
+    )
+
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size,
+        sampler=sampler,
+        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+        persistent_workers=PERSISTENT_WORKERS
+    )
+
+    # Stampa info distribuzione
+    class_names = train_dataset.classes
+    counts_dict = {class_names[i]: int(c) for i, c in enumerate(class_counts)}
+    print(f"  [Balanced Loader] Distribuzione reale: {counts_dict}")
+    print(f"  [Balanced Loader] WeightedRandomSampler → {len(train_dataset)} campioni/epoca "
+          f"(replacement=True)")
+
+    return train_loader, class_names

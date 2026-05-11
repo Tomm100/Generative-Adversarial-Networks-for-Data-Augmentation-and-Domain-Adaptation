@@ -18,15 +18,31 @@ from models.resnet import ResNetClassifier
 from models.wgan import weights_init
 from utils.visualization import save_gan_samples
 
-def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Phase1"):
+def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Phase1",
+                 class_weights=None):
     """
     Allena ResNet18 (Feature Extractor / Classifier).
     Salva il checkpoint migliore in base alla Macro F1 sul validation set.
+
+    Args:
+        train_loader:   DataLoader per il training
+        val_loader:     DataLoader per la validazione
+        device:         torch.device
+        epochs:         numero di epoche
+        lr:             learning rate
+        tag:            stringa identificativa per WandB e checkpoint
+        class_weights:  Tensor 1D di forma [num_classes] con pesi per la loss.
+                        Se None usa CrossEntropyLoss standard (nessun bilanciamento).
+                        Esempio: torch.tensor([w_normal, w_pneumonia], device=device)
     """
     model = ResNetClassifier(num_classes=2)
     model = model.to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    if class_weights is not None:
+        criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+        print(f"  [Loss] CrossEntropyLoss con class_weights={class_weights.tolist()}")
+    else:
+        criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     best_macro_f1 = -1.0
