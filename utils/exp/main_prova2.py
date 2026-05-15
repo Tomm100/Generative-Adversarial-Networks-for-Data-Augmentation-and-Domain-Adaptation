@@ -27,7 +27,7 @@ from utils.seed import set_seed
 CUSTOM_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_BAGAN/gan_checkpoints/G_epoch_200.pth"
 TARGET_CLASS = "NORMAL"  # La classe su cui valutare la diversity (solitamente la minoritaria)
 NUM_SAMPLES = 100        # Quante immagini reali vs fake confrontare
-RESULTS_DIR = "./results/feature_diversity"
+RESULTS_DIR = "./resultsss/feature_diversity"
 # ==============================================================================
 
 def get_feature_extractor(device):

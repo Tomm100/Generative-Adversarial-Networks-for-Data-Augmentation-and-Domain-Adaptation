@@ -1,13 +1,14 @@
 """
-Script da eseguire UNA SOLA VOLTA su Google Colab.
+Script da eseguire UNA SOLA VOLTA su Google Colab o in locale.
 
-Crea il 'modified_dataset' in LOCALE con:
-- train/  → copia intatta del train set originale
-- val/    → 12.5% stratificato dal test set originale + 16 img validation originale
-- test/   → test set originale MENO le immagini spostate in val
-
-Poi lo copi tu su Drive manualmente:
-  !cp -r ./modified_dataset /content/drive/MyDrive/ProgettoMLVM/modified_dataset
+Crea il 'modified_dataset' seguendo queste regole rigorose:
+1. Il TEST SET originale non viene ASSOLUTAMENTE toccato (copiato così com'è).
+2. Il TRAIN e VAL set vengono creati unendo le immagini dei vecchi train e val,
+   per raggiungere (il più fedelmente possibile in base ai file disponibili)
+   le proporzioni richieste:
+   
+   NORMAL:    Train ~1145, Val 205, Test 234
+   PNEUMONIA: Train ~3502, Val 380, Test 390
 
 Le immagini sono selezionate con seed fisso (42) per riproducibilità.
 Un file split_info.json viene salvato per documentare lo split.
@@ -19,12 +20,10 @@ import random
 import json
 import zipfile
 
-
 def create_modified_dataset(
     zip_path='/content/drive/MyDrive/ProgettoMLVM/chest_xray.zip',
     extract_path='./original_dataset',
     dest='./modified_dataset',
-    val_ratio=0.125,
     seed=42
 ):
     # Controlla se già completo
@@ -33,8 +32,9 @@ def create_modified_dataset(
         print(f"✅ modified_dataset già presente in {dest}")
         with open(info_path) as f:
             info = json.load(f)
-        print(f"   Val:  {info['val_normal']} NORMAL + {info['val_pneumonia']} PNEUMONIA")
-        print(f"   Test: {info['test_normal']} NORMAL + {info['test_pneumonia']} PNEUMONIA")
+        print(f"   Train: {info['train_normal']} NORMAL + {info['train_pneumonia']} PNEUMONIA")
+        print(f"   Val:   {info['val_normal']} NORMAL + {info['val_pneumonia']} PNEUMONIA")
+        print(f"   Test:  {info['test_normal']} NORMAL + {info['test_pneumonia']} PNEUMONIA")
         return dest
 
     # Se cartella incompleta, rimuovi e ricrea
@@ -59,92 +59,88 @@ def create_modified_dataset(
     orig_test  = os.path.join(extract_path, 'chest_xray/test')
     orig_val   = os.path.join(extract_path, 'chest_xray/val')
 
-    for p in [orig_train, orig_test]:
-        if not os.path.exists(p):
-            print(f"ERRORE: {p} non trovato!")
-            return None
-
-    # 3. Crea struttura
-    train_dest = os.path.join(dest, 'train')
-    val_dest   = os.path.join(dest, 'val')
-    test_dest  = os.path.join(dest, 'test')
-
     print(f"\nCreazione modified_dataset in {dest}...")
 
-    # 3a. Copia train intatto
-    print("  Copiando train set (intatto)...")
-    shutil.copytree(orig_train, train_dest)
-    print("  Train copiato ✓")
+    # 3. COPIA IL TEST SET INTATTO
+    print("  Copiando test set originale (intatto)...")
+    test_dest = os.path.join(dest, 'test')
+    shutil.copytree(orig_test, test_dest)
+    print("  Test copiato ✓")
+    
+    test_normal = [f for f in os.listdir(os.path.join(test_dest, 'NORMAL')) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    test_pneumonia = [f for f in os.listdir(os.path.join(test_dest, 'PNEUMONIA')) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
-    # 3b. Split stratificato del test set
-    split_info = {'seed': seed, 'val_ratio': val_ratio, 'val_files': {}, 'test_files': {}}
+    # 4. Raccogli i file rimanenti (Train + Val originali)
+    avail_normal = []
+    avail_pneumonia = []
 
-    for cat in ['NORMAL', 'PNEUMONIA']:
-        os.makedirs(os.path.join(val_dest, cat), exist_ok=True)
-        os.makedirs(os.path.join(test_dest, cat), exist_ok=True)
+    for orig_dir in [orig_train, orig_val]:
+        if os.path.exists(orig_dir):
+            for cat, target_list in [('NORMAL', avail_normal), ('PNEUMONIA', avail_pneumonia)]:
+                cat_dir = os.path.join(orig_dir, cat)
+                if os.path.exists(cat_dir):
+                    for f in os.listdir(cat_dir):
+                        if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                            target_list.append(os.path.join(cat_dir, f))
 
-        orig_cat_dir = os.path.join(orig_test, cat)
-        all_files = sorted([
-            f for f in os.listdir(orig_cat_dir)
-            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-        ])
-        random.shuffle(all_files)
+    # Ordina e mescola
+    avail_normal.sort()
+    avail_pneumonia.sort()
+    random.shuffle(avail_normal)
+    random.shuffle(avail_pneumonia)
 
-        n_val = int(len(all_files) * val_ratio)
-        val_files  = all_files[:n_val]
-        test_files = all_files[n_val:]
+    # 5. Definisci i target per la Validation
+    target_val_n = 205
+    target_val_p = 380
 
-        for f in val_files:
-            shutil.copy2(os.path.join(orig_cat_dir, f), os.path.join(val_dest, cat, f))
-        for f in test_files:
-            shutil.copy2(os.path.join(orig_cat_dir, f), os.path.join(test_dest, cat, f))
+    # Il Validation si prende esattamente la sua quota
+    val_normal = avail_normal[:target_val_n]
+    val_pneumonia = avail_pneumonia[:target_val_p]
 
-        split_info['val_files'][cat] = val_files
-        split_info['test_files'][cat] = test_files
-        print(f"  {cat}: {len(val_files)} → val, {len(test_files)} → test (totale: {len(all_files)})")
+    # Il Train si prende tutto il resto dei file disponibili
+    train_normal = avail_normal[target_val_n:]
+    train_pneumonia = avail_pneumonia[target_val_p:]
 
-    # 3c. Aggiungi le 16 immagini della validation originale al val set
-    n_orig_val = 0
-    split_info['orig_val_files'] = {}
-    for cat in ['NORMAL', 'PNEUMONIA']:
-        orig_val_cat = os.path.join(orig_val, cat)
-        copied = []
-        if os.path.exists(orig_val_cat):
-            for f in os.listdir(orig_val_cat):
-                if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    shutil.copy2(os.path.join(orig_val_cat, f), os.path.join(val_dest, cat, f))
-                    copied.append(f)
-                    n_orig_val += 1
-        split_info['orig_val_files'][cat] = copied
-    print(f"  + {n_orig_val} immagini dalla validation originale aggiunte al val set")
+    # 6. Copia i file Train e Val
+    splits = [
+        ('train', 'NORMAL', train_normal),
+        ('train', 'PNEUMONIA', train_pneumonia),
+        ('val', 'NORMAL', val_normal),
+        ('val', 'PNEUMONIA', val_pneumonia)
+    ]
 
-    # Conteggi
-    split_info['val_normal']     = len(split_info['val_files']['NORMAL']) + len(split_info['orig_val_files']['NORMAL'])
-    split_info['val_pneumonia']  = len(split_info['val_files']['PNEUMONIA']) + len(split_info['orig_val_files']['PNEUMONIA'])
-    split_info['test_normal']    = len(split_info['test_files']['NORMAL'])
-    split_info['test_pneumonia'] = len(split_info['test_files']['PNEUMONIA'])
+    for split_name, cat, files in splits:
+        out_dir = os.path.join(dest, split_name, cat)
+        os.makedirs(out_dir, exist_ok=True)
+        for src_file in files:
+            filename = os.path.basename(src_file)
+            shutil.copy2(src_file, os.path.join(out_dir, filename))
 
-    train_n = len([f for f in os.listdir(os.path.join(train_dest, 'NORMAL')) if f.lower().endswith(('.png','.jpg','.jpeg'))])
-    train_p = len([f for f in os.listdir(os.path.join(train_dest, 'PNEUMONIA')) if f.lower().endswith(('.png','.jpg','.jpeg'))])
-    split_info['train_normal']    = train_n
-    split_info['train_pneumonia'] = train_p
+    # 7. Salva split_info.json
+    split_info = {
+        'seed': seed,
+        'train_normal': len(train_normal),
+        'train_pneumonia': len(train_pneumonia),
+        'val_normal': len(val_normal),
+        'val_pneumonia': len(val_pneumonia),
+        'test_normal': len(test_normal),
+        'test_pneumonia': len(test_pneumonia)
+    }
 
-    # Salva split_info.json (ULTIMO STEP = prova di completamento)
     with open(os.path.join(dest, 'split_info.json'), 'w') as f:
         json.dump(split_info, f, indent=2)
 
     print(f"\n{'='*50}")
     print(f"modified_dataset creato con successo!")
     print(f"{'='*50}")
-    print(f"  Train: {train_n} NORMAL + {train_p} PNEUMONIA = {train_n + train_p}")
-    print(f"  Val:   {split_info['val_normal']} NORMAL + {split_info['val_pneumonia']} PNEUMONIA = {split_info['val_normal'] + split_info['val_pneumonia']}")
-    print(f"  Test:  {split_info['test_normal']} NORMAL + {split_info['test_pneumonia']} PNEUMONIA = {split_info['test_normal'] + split_info['test_pneumonia']}")
+    print(f"  Train: {len(train_normal)} NORMAL + {len(train_pneumonia)} PNEUMONIA = {len(train_normal) + len(train_pneumonia)}")
+    print(f"  Val:   {len(val_normal)} NORMAL + {len(val_pneumonia)} PNEUMONIA = {len(val_normal) + len(val_pneumonia)}")
+    print(f"  Test:  {len(test_normal)} NORMAL + {len(test_pneumonia)} PNEUMONIA = {len(test_normal) + len(test_pneumonia)}")
     print(f"\n  Salvato in: {dest}")
     print(f"\n  Per copiarlo su Drive:")
     print(f"  !cp -r {dest} /content/drive/MyDrive/ProgettoMLVM/modified_dataset")
 
     return dest
-
 
 if __name__ == '__main__':
     create_modified_dataset()
