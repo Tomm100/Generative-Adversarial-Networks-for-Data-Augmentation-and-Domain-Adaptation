@@ -115,7 +115,7 @@ def main():
     # ══════════════════════════════════════════════════════════
     print(f"\n{'='*60}\n  PHASE 2: Training SAGAN\n{'='*60}")
 
-    gan_loader = get_gan_dataloader(
+    gan_loader, _ = get_gan_dataloader(
         train_dir, img_size=GAN_IMG_SIZE, batch_size=GAN_BATCH_SIZE)
 
     G = SAGenerator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GAN_D).to(device)

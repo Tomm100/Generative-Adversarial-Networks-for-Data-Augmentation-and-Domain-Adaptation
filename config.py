@@ -49,7 +49,7 @@ GAN_GEN_BATCH_SIZE       = 64    # Batch size durante la generazione di immagini
 GAN_JPEG_QUALITY         = 95    # Qualità JPEG delle immagini sintetiche salvate
 # GAN_LR_MILESTONES = [60, 80]  # Non più in uso (WGAN-GP ora usa LinearLR continuo verso 0)
 # GAN_LR_GAMMA    = 0.2         # Non più in uso
-GAN_VALIDATE_EVERY       = 10   # Validazione ogni N epoche GAN
+GAN_VALIDATE_EVERY       = 50   # Validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS    = 5    # Epoche ResNet ridotte per validazione periodica
 
 # ─── DANN (Domain Adaptation) ────────────────────────────
