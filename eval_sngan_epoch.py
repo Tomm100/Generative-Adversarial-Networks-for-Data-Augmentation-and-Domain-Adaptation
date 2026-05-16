@@ -29,7 +29,6 @@ from eval import evaluate_on_test, generate_synthetic_images
 from utils.seed import set_seed
 
 SNGAN_D = 128
-SNGAN_CKPT_DIR = os.path.join(RESULTS_DIR, "sngan_checkpoints")
 SNGAN_SYNTH_DIR = os.path.join(RESULTS_DIR, "sngan_synthetic_images_eval")
 SNGAN_AUG_DIR = os.path.join(RESULTS_DIR, "sngan_augmented_dataset_eval")
 
@@ -61,6 +60,8 @@ def extract_features(loader, model, device):
 def main():
     parser = argparse.ArgumentParser(description="Valuta una specifica epoca SNGAN e ne analizza il manifold")
     parser.add_argument('--epoch', type=int, default=220, help="Epoca del checkpoint Generator da caricare")
+    parser.add_argument('--ckpt_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/GAN_CHECKPOINTS_BACKUP", help="Path assoluto ai checkpoint su Drive")
+    parser.add_argument('--drive_plot_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/Eval_Results", help="Path assoluto su Drive dove salvare i plot")
     args = parser.parse_args()
 
     target_epoch = args.epoch
@@ -107,7 +108,8 @@ def main():
     print(f"\n{'='*60}\n  PHASE 2: Caricamento SNGAN Epoca {target_epoch}\n{'='*60}")
     
     G = SNGenerator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=SNGAN_D).to(device)
-    ckpt_path = os.path.join(SNGAN_CKPT_DIR, f'G_epoch_{target_epoch}.pth')
+    # Cerca il file su Drive con il prefisso 'sngan'
+    ckpt_path = os.path.join(args.ckpt_dir, f'G_sngan_epoch_{target_epoch}.pth')
     
     if not os.path.exists(ckpt_path):
         print(f"ERRORE: Impossibile trovare il checkpoint: {ckpt_path}")
@@ -222,12 +224,19 @@ def main():
     axes[1].set_title('t-SNE Manifold (NORMAL)')
     axes[1].legend()
 
-    plot_path = os.path.join(RESULTS_DIR, f'sngan_manifold_ep{target_epoch}.png')
-    plt.savefig(plot_path, dpi=150)
+    plot_path_local = os.path.join(RESULTS_DIR, f'sngan_manifold_ep{target_epoch}.png')
+    
+    # Crea cartella su Drive per i plot se non esiste
+    os.makedirs(args.drive_plot_dir, exist_ok=True)
+    plot_path_drive = os.path.join(args.drive_plot_dir, f'sngan_manifold_ep{target_epoch}.png')
+    
+    plt.savefig(plot_path_local, dpi=150)
+    plt.savefig(plot_path_drive, dpi=150)
     plt.close(fig)
 
-    wandb.log({"Manifold_Analysis": wandb.Image(plot_path)})
-    print(f"  Analisi Manifold salvata in: {plot_path}")
+    wandb.log({"Manifold_Analysis": wandb.Image(plot_path_local)})
+    print(f"  Analisi Manifold salvata in locale: {plot_path_local}")
+    print(f"  Analisi Manifold salvata su Drive: {plot_path_drive}")
     
     wandb.finish()
     print("\n  Valutazione e Analisi Manifold completate.")
