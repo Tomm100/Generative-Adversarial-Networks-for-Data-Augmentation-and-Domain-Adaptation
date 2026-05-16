@@ -1,5 +1,6 @@
 import torch
 import os
+import wandb
 import shutil
 import argparse
 from config import (
@@ -29,6 +30,13 @@ def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Avvio Valutazione Specifica SNGAN (Epoca {target_epoch}) su Device: {device}")
+
+    wandb.init(
+        project="gan-chest-xray-augmentation",
+        entity="MachineLearningForVisionAndMultimedia",
+        name=f"SNGAN_Eval_Epoch_{target_epoch}",
+        config={"epoch_evaluated": target_epoch}
+    )
 
     # 1. SETUP DATASET
     res = setup_dataset(dataset_dir=DATASET_DIR)
