@@ -14,9 +14,35 @@ from tqdm import tqdm
 # Import dal progetto (ora che il file è nella root, funzionano direttamente)
 from config import DATASET_DIR, GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESNET_IMG_SIZE
 from models.wgan import Generator
-from dataset.loader import setup_dataset
 from utils.seed import set_seed
-from utils.exp.main_prova3 import DomainDataset
+from dataset.loader import setup_dataset
+from torch.utils.data import Dataset
+from PIL import Image
+
+class DomainDataset(Dataset):
+    def __init__(self, real_dir, fake_dir, transform=None):
+        self.transform = transform
+        self.samples = []
+        
+        # Real = label 0
+        real_files = [os.path.join(real_dir, f) for f in os.listdir(real_dir) if f.endswith(('.png', '.jpg', '.jpeg', '.JPG'))]
+        for f in real_files:
+            self.samples.append((f, 0))
+            
+        # Fake = label 1
+        fake_files = [os.path.join(fake_dir, f) for f in os.listdir(fake_dir) if f.endswith(('.png', '.jpg', '.jpeg', '.JPG'))]
+        for f in fake_files:
+            self.samples.append((f, 1))
+            
+    def __len__(self):
+        return len(self.samples)
+        
+    def __getitem__(self, idx):
+        path, label = self.samples[idx]
+        img = Image.open(path).convert('RGB')
+        if self.transform:
+            img = self.transform(img)
+        return img, label
 
 # ==============================================================================
 # ⚙️ IMPOSTAZIONI DELL'ESPERIMENTO
