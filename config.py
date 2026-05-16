@@ -28,7 +28,7 @@ RESNET_NUM_CLASSES = 2
 # ─── WGAN-GP ─────────────────────────────────────────────
 GAN_IMG_SIZE    = 128
 GAN_BATCH_SIZE  = 64
-GAN_EPOCHS      = 200
+GAN_EPOCHS      = 300
 GAN_LR          = 0.0001
 GAN_BETA1                = 0.0   # β₁ Adam (0.0 raccomandato per WGAN-GP)
 GAN_BETA2                = 0.9   # β₂ Adam
