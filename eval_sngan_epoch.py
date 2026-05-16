@@ -1,11 +1,25 @@
 import torch
 import os
-import wandb
 import shutil
+import random
 import argparse
+import wandb
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+import torchvision.models as models
+import torchvision.transforms as transforms
+import torch.nn as nn
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
+
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR,
-    RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
+    RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_LR,
     GAN_NZ, GAN_N_CLASS, GAN_NC, SEED
 )
 from dataset.loader import setup_dataset, get_dataloaders
@@ -14,14 +28,38 @@ from train import train_resnet
 from eval import evaluate_on_test, generate_synthetic_images
 from utils.seed import set_seed
 
-# Variabili locali per la SNGAN (d=128 come impostato in main_sngan.py)
 SNGAN_D = 128
 SNGAN_CKPT_DIR = os.path.join(RESULTS_DIR, "sngan_checkpoints")
 SNGAN_SYNTH_DIR = os.path.join(RESULTS_DIR, "sngan_synthetic_images_eval")
 SNGAN_AUG_DIR = os.path.join(RESULTS_DIR, "sngan_augmented_dataset_eval")
 
+class SimpleDataset(Dataset):
+    def __init__(self, dir_path, transform=None, max_samples=500):
+        self.files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(('.png', '.jpg', '.jpeg', '.JPG'))]
+        random.shuffle(self.files)
+        self.files = self.files[:max_samples] # Limita per velocizzare t-SNE
+        self.transform = transform
+        
+    def __len__(self):
+        return len(self.files)
+        
+    def __getitem__(self, idx):
+        img = Image.open(self.files[idx]).convert('RGB')
+        if self.transform:
+            img = self.transform(img)
+        return img
+
+def extract_features(loader, model, device):
+    model.eval()
+    features = []
+    with torch.no_grad():
+        for x in loader:
+            feats = model(x.to(device)).cpu().numpy()
+            features.append(feats)
+    return np.concatenate(features, axis=0)
+
 def main():
-    parser = argparse.ArgumentParser(description="Valuta una specifica epoca SNGAN (es. 220)")
+    parser = argparse.ArgumentParser(description="Valuta una specifica epoca SNGAN e ne analizza il manifold")
     parser.add_argument('--epoch', type=int, default=220, help="Epoca del checkpoint Generator da caricare")
     args = parser.parse_args()
 
@@ -29,13 +67,13 @@ def main():
 
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Avvio Valutazione Specifica SNGAN (Epoca {target_epoch}) su Device: {device}")
+    print(f"Avvio Valutazione SNGAN (Epoca {target_epoch}) su Device: {device}")
 
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name=f"SNGAN_Eval_Epoch_{target_epoch}",
-        config={"epoch_evaluated": target_epoch}
+        name=f"SNGAN_Eval_Manifold_Ep{target_epoch}",
+        config={"epoch_evaluated": target_epoch, "resnet_custom_epochs": 30}
     )
 
     # 1. SETUP DATASET
@@ -53,12 +91,12 @@ def main():
         img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE)
 
     # ══════════════════════════════════════════════════════════════
-    # PHASE 1: BASELINE RESNET
+    # PHASE 1: BASELINE RESNET (30 Epoche)
     # ══════════════════════════════════════════════════════════════
-    print(f"\n{'='*60}\n  PHASE 1: Baseline ResNet (solo dati reali)\n{'='*60}")
+    print(f"\n{'='*60}\n  PHASE 1: Baseline ResNet (30 EPOCHE, solo dati reali)\n{'='*60}")
     resnet_model, _, ckpt_p1 = train_resnet(
         train_loader, val_loader, device,
-        epochs=RESNET_EPOCHS, lr=RESNET_LR, tag="Phase1_Eval")
+        epochs=30, lr=RESNET_LR, tag="Phase1_Eval")
     report_p1, _ = evaluate_on_test(
         resnet_model, ckpt_p1, test_loader, classes, device,
         tag="Phase1_Eval", out_dir=METRICS_DIR)
@@ -73,28 +111,25 @@ def main():
     
     if not os.path.exists(ckpt_path):
         print(f"ERRORE: Impossibile trovare il checkpoint: {ckpt_path}")
-        print("Assicurati di aver allenato la SNGAN fino a quell'epoca e di non aver spostato i file.")
+        print("Assicurati di aver allenato la SNGAN fino a quell'epoca.")
         return
 
     G.load_state_dict(torch.load(ckpt_path, map_location=device))
     print(f"  Checkpoint G_epoch_{target_epoch}.pth caricato con successo!")
 
     # ══════════════════════════════════════════════════════════════
-    # PHASE 3: RESNET SU DATASET AUGMENTED
+    # PHASE 3: RESNET SU DATASET AUGMENTED (30 Epoche)
     # ══════════════════════════════════════════════════════════════
-    print(f"\n{'='*60}\n  PHASE 3: Generazione e Training Augmented\n{'='*60}")
+    print(f"\n{'='*60}\n  PHASE 3: Generazione e Training Augmented (30 EPOCHE)\n{'='*60}")
 
-    # Pulizia vecchie cartelle
     if os.path.exists(SNGAN_SYNTH_DIR): shutil.rmtree(SNGAN_SYNTH_DIR)
     if os.path.exists(SNGAN_AUG_DIR): shutil.rmtree(SNGAN_AUG_DIR)
 
-    # Genera immagini
     generate_synthetic_images(
         G, num_gen_normal, num_gen_pneumonia,
         nz=GAN_NZ, n_class=GAN_N_CLASS, device=device,
         syn_dir=SNGAN_SYNTH_DIR)
 
-    # Costruisci dataset augmented
     aug_train_dir = os.path.join(SNGAN_AUG_DIR, 'train')
     shutil.copytree(train_dir, aug_train_dir)
     for cat in ['NORMAL', 'PNEUMONIA']:
@@ -107,10 +142,9 @@ def main():
         aug_train_dir, val_dir, test_dir,
         img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE)
 
-    # Allena ResNet su Augmented
     resnet_aug, _, ckpt_p3 = train_resnet(
         aug_loader, val_loader, device,
-        epochs=RESNET_EPOCHS, lr=RESNET_LR, tag=f"Phase3_Eval_ep{target_epoch}")
+        epochs=30, lr=RESNET_LR, tag=f"Phase3_Eval_ep{target_epoch}")
     report_p3, _ = evaluate_on_test(
         resnet_aug, ckpt_p3, test_loader, classes, device,
         tag=f"Phase3_Eval_ep{target_epoch}", out_dir=METRICS_DIR)
@@ -119,7 +153,7 @@ def main():
     # CONFRONTO FINALE
     # ══════════════════════════════════════════════════════════════
     print(f"\n{'='*60}")
-    print(f"  CONFRONTO: Baseline vs SNGAN (Epoca {target_epoch} — FID Lowest)")
+    print(f"  CONFRONTO FINALE SU 30 EPOCHE: Baseline vs SNGAN (Epoca {target_epoch})")
     print(f"{'='*60}")
 
     for cls in classes:
@@ -133,7 +167,70 @@ def main():
     acc3 = report_p3['accuracy']
     print(f"\n  Overall Acc: {acc1:.4f} → {acc3:.4f}  ({'↑' if acc3 > acc1 else '↓'} {abs(acc3 - acc1):.4f})")
     
-    print("\n  Valutazione completata. Confronto salvato anche su WandB (se attivo).")
+    # ══════════════════════════════════════════════════════════════
+    # MANIFOLD ANALYSIS (PCA & t-SNE)
+    # ══════════════════════════════════════════════════════════════
+    print(f"\n{'='*60}\n  ANALISI MANIFOLD (PCA & t-SNE) su classe NORMAL\n{'='*60}")
+    
+    resnet_feat = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+    resnet_feat.fc = nn.Identity()
+    resnet_feat = resnet_feat.to(device).eval()
+
+    transform = transforms.Compose([
+        transforms.Resize((RESNET_IMG_SIZE, RESNET_IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    real_normal_dir = os.path.join(train_dir, 'NORMAL')
+    synth_normal_dir = os.path.join(SNGAN_SYNTH_DIR, 'NORMAL')
+
+    # Usiamo max 500 campioni per tipo per non far esplodere i tempi di calcolo della t-SNE
+    ds_real = SimpleDataset(real_normal_dir, transform=transform, max_samples=500)
+    ds_synth = SimpleDataset(synth_normal_dir, transform=transform, max_samples=500)
+
+    loader_real = DataLoader(ds_real, batch_size=64, shuffle=False)
+    loader_synth = DataLoader(ds_synth, batch_size=64, shuffle=False)
+
+    print("  Estrazione feature Real NORMAL...")
+    feat_real = extract_features(loader_real, resnet_feat, device)
+    print("  Estrazione feature Synth NORMAL...")
+    feat_synth = extract_features(loader_synth, resnet_feat, device)
+
+    all_feats = np.concatenate([feat_real, feat_synth], axis=0)
+    
+    print("  Calcolo PCA...")
+    pca = PCA(n_components=2)
+    pca_res = pca.fit_transform(all_feats)
+
+    print("  Calcolo t-SNE...")
+    tsne = TSNE(n_components=2, perplexity=30, random_state=SEED)
+    tsne_res = tsne.fit_transform(all_feats)
+
+    # Plot
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    
+    # PCA Plot
+    axes[0].scatter(pca_res[:len(feat_real), 0], pca_res[:len(feat_real), 1], c='gray', label='Real NORMAL', alpha=0.6, s=15)
+    axes[0].scatter(pca_res[len(feat_real):, 0], pca_res[len(feat_real):, 1], c='crimson', label='Synth NORMAL', alpha=0.6, s=15)
+    axes[0].set_title('PCA Manifold (NORMAL)')
+    axes[0].legend()
+
+    # t-SNE Plot
+    axes[1].scatter(tsne_res[:len(feat_real), 0], tsne_res[:len(feat_real), 1], c='gray', label='Real NORMAL', alpha=0.6, s=15)
+    axes[1].scatter(tsne_res[len(feat_real):, 0], tsne_res[len(feat_real):, 1], c='crimson', label='Synth NORMAL', alpha=0.6, s=15)
+    axes[1].set_title('t-SNE Manifold (NORMAL)')
+    axes[1].legend()
+
+    plot_path = os.path.join(RESULTS_DIR, f'sngan_manifold_ep{target_epoch}.png')
+    plt.savefig(plot_path, dpi=150)
+    plt.close(fig)
+
+    wandb.log({"Manifold_Analysis": wandb.Image(plot_path)})
+    print(f"  Analisi Manifold salvata in: {plot_path}")
+    
+    wandb.finish()
+    print("\n  Valutazione e Analisi Manifold completate.")
 
 if __name__ == '__main__':
     main()

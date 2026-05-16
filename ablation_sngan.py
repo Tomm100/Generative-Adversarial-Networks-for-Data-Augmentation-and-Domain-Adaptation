@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
+    RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
     GAN_NZ, GAN_N_CLASS, GAN_NC, SEED
 )
 from dataset.loader import setup_dataset, get_dataloaders
@@ -20,13 +21,14 @@ from eval import evaluate_on_test, generate_synthetic_images
 from utils.seed import set_seed
 
 SNGAN_D = 128
-SNGAN_CKPT_DIR = os.path.join(RESULTS_DIR, "sngan_checkpoints")
 ABLATION_DIR = os.path.join(RESULTS_DIR, "ablation_study")
 FULL_SYNTH_DIR = os.path.join(ABLATION_DIR, "full_synthetic_pool")
 
 def main():
     parser = argparse.ArgumentParser(description="Ablation Study sulle percentuali di Data Augmentation")
     parser.add_argument('--epoch', type=int, default=220, help="Epoca del Generator SNGAN da usare")
+    parser.add_argument('--ckpt_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/GAN_CHECKPOINTS_BACKUP", help="Path assoluto ai checkpoint su Drive")
+    parser.add_argument('--drive_plot_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/Ablation_Results", help="Path assoluto su Drive dove salvare i plot")
     args = parser.parse_args()
 
     target_epoch = args.epoch
@@ -59,7 +61,13 @@ def main():
     os.makedirs(FULL_SYNTH_DIR, exist_ok=True)
 
     G = SNGenerator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=SNGAN_D).to(device)
-    ckpt_path = os.path.join(SNGAN_CKPT_DIR, f'G_epoch_{target_epoch}.pth')
+    # Su Drive il file si chiama G_sngan_epoch_220.pth
+    ckpt_path = os.path.join(args.ckpt_dir, f'G_sngan_epoch_{target_epoch}.pth')
+    
+    if not os.path.exists(ckpt_path):
+        print(f"\nERRORE: Non trovo il file dei pesi su Drive: {ckpt_path}")
+        return
+        
     G.load_state_dict(torch.load(ckpt_path, map_location=device))
     
     generate_synthetic_images(
@@ -155,14 +163,22 @@ def main():
     ax.grid(True, linestyle='--', alpha=0.7)
     ax.legend()
     
-    plot_path = os.path.join(ABLATION_DIR, 'ablation_curve.png')
-    plt.savefig(plot_path, dpi=150)
+    # Salviamo il grafico sia in locale che sul Drive
+    plot_path_local = os.path.join(ABLATION_DIR, 'ablation_curve.png')
+    
+    # Crea cartella su Drive per i plot se non esiste
+    os.makedirs(args.drive_plot_dir, exist_ok=True)
+    plot_path_drive = os.path.join(args.drive_plot_dir, f'ablation_curve_ep{target_epoch}.png')
+    
+    plt.savefig(plot_path_local, dpi=150)
+    plt.savefig(plot_path_drive, dpi=150)
     plt.close(fig)
     
-    wandb.log({"Ablation_Curve": wandb.Image(plot_path)})
+    wandb.log({"Ablation_Curve": wandb.Image(plot_path_local)})
     wandb.finish()
     
-    print(f"\nGrafico salvato in: {plot_path}")
+    print(f"\nGrafico salvato in locale: {plot_path_local}")
+    print(f"Grafico salvato su Drive: {plot_path_drive}")
     print("Ablation Study completato con successo!")
 
 if __name__ == '__main__':
