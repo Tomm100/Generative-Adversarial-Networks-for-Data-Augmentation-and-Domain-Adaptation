@@ -10,11 +10,8 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import scipy.linalg
 from tqdm import tqdm
-import sys
 
-# Aggiungi la root del progetto al path per le importazioni
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
+# Import dal progetto (ora che il file è nella root, funzionano direttamente)
 from config import DATASET_DIR, GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESNET_IMG_SIZE
 from models.wgan import Generator
 from dataset.loader import setup_dataset
