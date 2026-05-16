@@ -60,8 +60,8 @@ def extract_features(loader, model, device):
 def main():
     parser = argparse.ArgumentParser(description="Valuta una specifica epoca SNGAN e ne analizza il manifold")
     parser.add_argument('--epoch', type=int, default=220, help="Epoca del checkpoint Generator da caricare")
-    parser.add_argument('--ckpt_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/GAN_CHECKPOINTS_BACKUP", help="Path assoluto ai checkpoint su Drive")
-    parser.add_argument('--drive_plot_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/Eval_Results", help="Path assoluto su Drive dove salvare i plot")
+    parser.add_argument('--ckpt_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints", help="Path assoluto ai checkpoint su Drive")
+    parser.add_argument('--drive_plot_dir', type=str, default="/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/Eval_Results220", help="Path assoluto su Drive dove salvare i plot")
     args = parser.parse_args()
 
     target_epoch = args.epoch
