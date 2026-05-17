@@ -46,18 +46,22 @@ from utils.seed import set_seed
 # ⚙️ CONFIGURAZIONE
 # ==============================================================================
 # Epoch della GAN da usare per generare le immagini sintetiche
-GAN_EPOCH_TO_USE = 300
+GAN_EPOCH_TO_USE = 220
 
 # Quante immagini NORMAL sintetiche generare (bilanciare col train reale)
 # Metti 0 per ricalcolare automaticamente dal gap NORMAL/PNEUMONIA
 NUM_SYNTHETIC_NORMAL = 0  # 0 = auto (verrà calcolato dal gap del training set)
 
 # Configurazione DANN
-DANN_EPOCHS    = 50
-DANN_LR_FEAT   = 1e-4   # LR basso per preservare i pesi pretrained
-DANN_LR_CLASS  = 1e-3   # LR alto per i classificatori
-DANN_BETA1     = 0.5    # β₁ Adam ridotto per stabilità con GRL
-DANN_BATCH     = 32
+DANN_EPOCHS      = 50
+DANN_LR_FEAT     = 1e-4   # LR basso per preservare i pesi pretrained
+DANN_LR_CLASS    = 1e-3   # LR alto per i classificatori
+DANN_BETA1       = 0.5    # β₁ Adam ridotto per stabilità con GRL
+DANN_BATCH       = 32
+DANN_ALPHA_SYNTH = 0.5    # peso della task loss sui sintetici (Supervised DA)
+                          # 0.0 = UDA puro (sintetici ignorati dalla testa classif.)
+                          # 0.5 = bilanciato (reale domina, sintetico supplementare)
+                          # 1.0 = simmetrico (reale = sintetico)
 
 DANN_CKPT_DIR = "./results/dann_synth_checkpoints"
 # ==============================================================================
@@ -112,16 +116,17 @@ def main():
         entity="MachineLearningForVisionAndMultimedia",
         name=f"DANN_Synth_ep{GAN_EPOCH_TO_USE}",
         config={
-            "phase":          "DANN_Synth_Domain_Adaptation",
-            "seed":           SEED,
-            "gan_epoch":      GAN_EPOCH_TO_USE,
-            "num_synth":      num_synth,
-            "dann_epochs":    DANN_EPOCHS,
-            "dann_lr_feat":   DANN_LR_FEAT,
-            "dann_lr_class":  DANN_LR_CLASS,
-            "dann_beta1":     DANN_BETA1,
-            "dann_batch":     DANN_BATCH,
-            "img_size":       RESNET_IMG_SIZE,
+            "phase":            "DANN_Synth_Domain_Adaptation",
+            "seed":             SEED,
+            "gan_epoch":        GAN_EPOCH_TO_USE,
+            "num_synth":        num_synth,
+            "dann_epochs":      DANN_EPOCHS,
+            "dann_lr_feat":     DANN_LR_FEAT,
+            "dann_lr_class":    DANN_LR_CLASS,
+            "dann_beta1":       DANN_BETA1,
+            "dann_batch":       DANN_BATCH,
+            "dann_alpha_synth": DANN_ALPHA_SYNTH,
+            "img_size":         RESNET_IMG_SIZE,
         }
     )
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -181,6 +186,7 @@ def main():
         lr_feature=DANN_LR_FEAT,
         lr_classifier=DANN_LR_CLASS,
         beta1=DANN_BETA1,
+        alpha_synth=DANN_ALPHA_SYNTH,
         tag="DANN_Synth",
         checkpoints_dir=DANN_CKPT_DIR,
         val_loader=val_loader,

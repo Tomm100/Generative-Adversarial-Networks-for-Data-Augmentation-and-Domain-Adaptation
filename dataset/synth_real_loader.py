@@ -41,11 +41,16 @@ def _make_balanced_sampler(dataset, num_samples):
 
 class SyntheticDataset(Dataset):
     """
-    Dataset per le immagini sintetiche generate dalla GAN.
+    Dataset per le immagini sintetiche generate dalla GAN condizionale.
 
     Carica tutte le immagini da una cartella flat (senza sottocartelle).
-    Restituisce (image_tensor, 0) dove 0 è un placeholder per la classe
-    (non usato durante il training — il Target non ha supervisione di classe).
+    Restituisce (image_tensor, 0) dove 0 = NORMAL — corrispondente all'indice
+    della classe NORMAL nell'ordinamento alfabetico di ImageFolder
+    (['NORMAL'=0, 'PNEUMONIA'=1]).
+
+    Nota: la label 0 NON è un placeholder. Viene usata nella task loss del
+    Supervised DANN (alpha_synth * CrossEntropy(class_out_fake, y_fake)).
+    Le immagini sono certe al 100% essere NORMAL per costruzione della GAN.
 
     Le immagini sono salvate come JPEG grayscale dalla GAN.
     La trasformazione le converte in RGB (3 canali) per la ResNet.

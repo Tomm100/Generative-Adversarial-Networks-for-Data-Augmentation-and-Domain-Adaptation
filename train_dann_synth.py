@@ -41,23 +41,26 @@ def train_dann_synth(
     lr_feature=1e-4,
     lr_classifier=1e-3,
     beta1=0.5,
+    alpha_synth=0.5,
     tag="DANN_Synth",
     checkpoints_dir="./results/dann_synth_checkpoints",
     val_loader=None,
     class_names=None
 ):
     """
-    Training loop DANN Synth→Real.
+    Training loop DANN Synth→Real (Supervised Domain Adaptation).
 
     Args:
         model:          DANNSynth instance
         source_loader:  DataLoader immagini REALI con label di classe
-        target_loader:  DataLoader immagini SINTETICHE (label ignorate)
+        target_loader:  DataLoader immagini SINTETICHE con label di classe (NORMAL=0)
         device:         torch.device
         epochs:         numero epoche
         lr_feature:     LR per il Feature Extractor (pretrained — va preservato)
         lr_classifier:  LR per Label Predictor e Domain Discriminator
         beta1:          β₁ di Adam (0.5 per stabilità con GRL)
+        alpha_synth:    peso della task loss sui sintetici (Supervised DA)
+                        0.0 = UDA puro | 0.5 = bilanciato | 1.0 = simmetrico
         tag:            identificativo per WandB e checkpoint
         checkpoints_dir: cartella checkpoint
         val_loader:     DataLoader val set REALE (per model selection)
@@ -86,19 +89,22 @@ def train_dann_synth(
     best_weights = None
 
     history = {
-        'loss_class': [], 'loss_domain': [], 'loss_total': [],
-        'lambda_p': [], 'val_acc': [], 'val_macro_f1': []
+        'loss_class_real': [], 'loss_class_fake': [], 'loss_class': [],
+        'loss_domain': [], 'loss_total': [],
+        'lambda_p': [], 'domain_acc': [],
+        'val_acc': [], 'val_macro_f1': []
     }
 
     n_batches = min(len(source_loader), len(target_loader))
     total_steps = epochs * n_batches
 
     print(f"\n{'='*60}")
-    print(f"  DANN Synth→Real Training — {epochs} epoche")
+    print(f"  DANN Synth→Real Training (Supervised DA) — {epochs} epoche")
     print(f"  Source (reali): {len(source_loader.dataset)} img")
     print(f"  Target (synth): {len(target_loader.dataset)} img")
     print(f"  LR Feature Extractor: {lr_feature}")
     print(f"  LR Classificatori:    {lr_classifier}")
+    print(f"  Alpha synth:          {alpha_synth}")
     print(f"  Batch/dominio: {source_loader.batch_size}  |  n_batches/epoch: {n_batches}")
     print(f"{'='*60}\n")
 
@@ -116,38 +122,46 @@ def train_dann_synth(
         pbar = tqdm(range(n_batches),
                     desc=f"  Epoch {epoch+1}/{epochs}", leave=False)
 
+        epoch_loss_class_real = 0.0
+        epoch_loss_class_fake = 0.0
+        epoch_domain_correct  = 0
+        epoch_domain_total    = 0
+
         for batch_idx in pbar:
             # Progresso globale e λ crescente
             p = (epoch * n_batches + batch_idx) / total_steps
             lambda_p = compute_lambda_p(p)
 
             # Sample dai due domini
-            x_real, y_real = next(source_iter)           # reali con label
-            x_fake, _      = next(target_iter)           # sintetici senza label
+            x_real, y_real = next(source_iter)            # reali con label di classe
+            x_fake, y_fake = next(target_iter)            # sintetici: y_fake=0 (NORMAL)
 
             x_real, y_real = x_real.to(device), y_real.to(device)
-            x_fake         = x_fake.to(device)
+            x_fake, y_fake = x_fake.to(device),  y_fake.to(device)
 
             # Domain labels: 0 = reale (Source), 1 = sintetico (Target)
             d_real = torch.zeros(x_real.size(0), 1, device=device)
             d_fake = torch.ones(x_fake.size(0),  1, device=device)
 
             # Forward: Source (reale)
-            class_out, domain_out_real, _ = model(x_real, lambda_p)
+            class_out_real, domain_out_real, _ = model(x_real, lambda_p)
 
-            # Forward: Target (sintetico) — solo per la domain loss
-            _, domain_out_fake, _ = model(x_fake, lambda_p)
+            # Forward: Target (sintetico) — ora anche per la task loss
+            class_out_fake, domain_out_fake, _ = model(x_fake, lambda_p)
 
-            # Task loss: classificazione SOLO sulle immagini REALI
-            loss_class = criterion_class(class_out, y_real)
+            # Task loss: reali (peso 1.0) + sintetici (peso alpha_synth)
+            # └→ i sintetici contribuiscono alla testa classificativa (Supervised DA)
+            loss_class_real = criterion_class(class_out_real, y_real)
+            loss_class_fake = criterion_class(class_out_fake, y_fake)
+            loss_class = loss_class_real + alpha_synth * loss_class_fake
 
-            # Domain loss: Source + Target (forza l'allineamento)
+            # Domain loss: Source + Target
+            # └→ il GRL impedisce lo shortcut texture→classe nel backward
             loss_domain = (
                 criterion_domain(domain_out_real, d_real) +
                 criterion_domain(domain_out_fake, d_fake)
             )
 
-            # Loss totale (il GRL inverte il gradiente domain → feature extractor)
             loss_total = loss_class + loss_domain
 
             optimizer.zero_grad()
@@ -157,23 +171,39 @@ def train_dann_synth(
             epoch_loss_class  += loss_class.item()
             epoch_loss_domain += loss_domain.item()
             epoch_loss_total  += loss_total.item()
+            epoch_loss_class_real += loss_class_real.item()
+            epoch_loss_class_fake += loss_class_fake.item()
+
+            # Domain discriminator accuracy (diagnostica: deve tendere a 50%)
+            with torch.no_grad():
+                d_pred_real = (torch.sigmoid(domain_out_real) < 0.5).sum().item()
+                d_pred_fake = (torch.sigmoid(domain_out_fake) >= 0.5).sum().item()
+                epoch_domain_correct += d_pred_real + d_pred_fake
+                epoch_domain_total   += x_real.size(0) + x_fake.size(0)
 
             pbar.set_postfix({
-                'cls': f"{loss_class.item():.3f}",
-                'dom': f"{loss_domain.item():.3f}",
-                'λ':   f"{lambda_p:.3f}"
+                'cls_r': f"{loss_class_real.item():.3f}",
+                'cls_s': f"{loss_class_fake.item():.3f}",
+                'dom':   f"{loss_domain.item():.3f}",
+                'λ':     f"{lambda_p:.3f}"
             })
 
         # Medie epoca
-        avg_cls = epoch_loss_class  / n_batches
-        avg_dom = epoch_loss_domain / n_batches
-        avg_tot = epoch_loss_total  / n_batches
+        avg_cls      = epoch_loss_class  / n_batches
+        avg_cls_real = epoch_loss_class_real / n_batches
+        avg_cls_fake = epoch_loss_class_fake / n_batches
+        avg_dom      = epoch_loss_domain / n_batches
+        avg_tot      = epoch_loss_total  / n_batches
         final_lambda = compute_lambda_p((epoch + 1) / epochs)
+        domain_acc   = epoch_domain_correct / epoch_domain_total if epoch_domain_total > 0 else 0.0
 
+        history['loss_class_real'].append(avg_cls_real)
+        history['loss_class_fake'].append(avg_cls_fake)
         history['loss_class'].append(avg_cls)
         history['loss_domain'].append(avg_dom)
         history['loss_total'].append(avg_tot)
         history['lambda_p'].append(final_lambda)
+        history['domain_acc'].append(domain_acc)
 
         # Valutazione su val set REALE
         val_acc, val_f1 = 0.0, 0.0
@@ -185,13 +215,16 @@ def train_dann_synth(
 
         # WandB logging
         wandb.log({
-            f"{tag}/loss_class":    avg_cls,
-            f"{tag}/loss_domain":   avg_dom,
-            f"{tag}/loss_total":    avg_tot,
-            f"{tag}/lambda_p":      final_lambda,
-            f"{tag}/val_acc":       val_acc,
-            f"{tag}/val_macro_f1":  val_f1,
-            f"{tag}/epoch":         epoch + 1,
+            f"{tag}/loss_class":        avg_cls,
+            f"{tag}/loss_class_real":   avg_cls_real,
+            f"{tag}/loss_class_fake":   avg_cls_fake,
+            f"{tag}/loss_domain":       avg_dom,
+            f"{tag}/loss_total":        avg_tot,
+            f"{tag}/lambda_p":          final_lambda,
+            f"{tag}/domain_disc_acc":   domain_acc,   # target: ~0.50 = GRL funziona
+            f"{tag}/val_acc":           val_acc,
+            f"{tag}/val_macro_f1":      val_f1,
+            f"{tag}/epoch":             epoch + 1,
         })
 
         # Best model selection su val Macro F1
@@ -203,8 +236,10 @@ def train_dann_synth(
 
         elapsed = (time.time() - start_time) / 60
         eta = (elapsed / (epoch + 1)) * (epochs - epoch - 1)
-        print(f"  Epoch {epoch+1}/{epochs} | CLS: {avg_cls:.4f} | "
-              f"DOM: {avg_dom:.4f} | λ: {final_lambda:.3f} | "
+        print(f"  Epoch {epoch+1}/{epochs} | "
+              f"CLS_r: {avg_cls_real:.4f} | CLS_s: {avg_cls_fake:.4f} | "
+              f"DOM: {avg_dom:.4f} | D_acc: {domain_acc:.2f} | "
+              f"λ: {final_lambda:.3f} | "
               f"ValAcc: {val_acc:.2f}% | ValF1: {val_f1:.4f}{saved} | "
               f"{elapsed:.1f}m (ETA: {eta:.1f}m)")
 
