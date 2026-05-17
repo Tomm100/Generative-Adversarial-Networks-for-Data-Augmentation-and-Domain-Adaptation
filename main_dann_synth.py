@@ -88,7 +88,7 @@ def main():
     print(f"  Immagini sintetiche da generare: {num_synth} NORMAL")
 
     # ── STEP 0: Generazione Immagini Sintetiche ──────────────────────────────
-    gan_ckpt = os.path.join("./results_SNGAN/sngan_checkpoints/", f"G_epoch_{GAN_EPOCH_TO_USE}.pth")
+    gan_ckpt = os.path.join("/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints/", f"G_epoch_{GAN_EPOCH_TO_USE}.pth")
     if not os.path.isfile(gan_ckpt):
         print(f"\n  ❌ Checkpoint GAN non trovato: {gan_ckpt}")
         print(f"  Verifica che main.py sia già stato eseguito e il training completato.")
