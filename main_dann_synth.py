@@ -137,12 +137,11 @@ def main():
     print(f"  STEP 1: Baseline — ResNet Phase 1 sul Test Set reale")
     print(f"{'═'*60}")
 
-    resnet_ckpt = os.path.join(CHECKPOINTS_DIR, 'best_model_Phase1.pth')
+    resnet_ckpt = os.path.join("/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/checkpoints/", 'best_model_Phase1.pth')
     if not os.path.isfile(resnet_ckpt):
-        print(f"  ⚠️  Checkpoint Phase 1 non trovato: {resnet_ckpt}")
-        print(f"  Esegui prima main.py per generarlo. Salto la baseline.")
-        report_baseline = None
-        cm_baseline     = None
+        print(f"\n  ❌ Checkpoint Phase 1 non trovato: {resnet_ckpt}")
+        print(f"  Esegui prima main.py per generarlo.")
+        return
     else:
         _, _, test_loader_base, class_names = get_dataloaders(
             train_dir, val_dir, test_dir,
