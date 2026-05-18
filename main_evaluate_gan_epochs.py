@@ -7,13 +7,13 @@ import glob
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
-
 from config import (
     DATASET_DIR, GAN_CHECKPOINTS_DIR, GAN_EPOCHS, 
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESULTS_DIR
 )
 from dataset.loader import setup_dataset
-from models.wgan import Generator
+from models.sngan import SNGenerator as Generator
+
 from eval import generate_synthetic_images
 from utils.seed import set_seed
 
@@ -27,7 +27,7 @@ class ResizedImageDataset(Dataset):
         
         self.transform = transforms.Compose([
             transforms.Resize(size),
-            transforms.ToTensor() 
+            transforms.PILToTensor() 
         ])
 
     def __len__(self):
@@ -36,7 +36,6 @@ class ResizedImageDataset(Dataset):
     def __getitem__(self, idx):
         img = Image.open(self.files[idx]).convert('RGB')
         return self.transform(img)
-# =========================================================
 
 
 def compute_FID_and_KID(real_dir, synth_dir, epoch, device):
@@ -76,15 +75,14 @@ def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # NOTA: Stai caricando da SNGAN ma usi il Generator di WGAN.
-    # Funzionerà perché l'architettura è identica, ma occhio se modifichi le reti in futuro!
+    
     checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints/'
 
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name="fidelity_evaluation_over_time",
-        config={"seed": SEED, "epochs": GAN_EPOCHS}
+        name="fidelity_evaluation_over_time_SNGAN",
+        config={"seed": SEED, "epochs": GAN_EPOCHS, "model": "SNGAN"}
     )
 
     res = setup_dataset(dataset_dir=DATASET_DIR)
@@ -104,7 +102,7 @@ def main():
         ckpt_path = os.path.join(checkpoints_dir, f'G_epoch_{epoch}.pth')
         if not os.path.exists(ckpt_path):
             print(f"  Checkpoint non trovato per l'epoca {epoch}.")
-            continue # Meglio "continue" di "return" così salta solo l'epoca mancante e passa alla successiva
+            continue 
 
         print(f"\n{'='*50}\nValutazione Epoca {epoch}\n{'='*50}")
 
@@ -128,7 +126,7 @@ def main():
 
         shutil.rmtree(epoch_synth_dir)
 
-    print("\n✅ Valutazione completa!")
+    print("\n✅ Valutazione SNGAN completa!")
     wandb.finish()
 
 if __name__ == '__main__':
