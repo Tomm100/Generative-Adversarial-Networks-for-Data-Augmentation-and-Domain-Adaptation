@@ -31,6 +31,10 @@ from config import (
     GAN_DRIVE_BACKUP_EVERY, GAN_DRIVE_DIR,
     NUM_WORKERS, PIN_MEMORY,
     SEED,
+    # SNGAN Configs
+    SNGAN_EPOCHS, SNGAN_LR, SNGAN_N_CRITIC, SNGAN_D,
+    SNGAN_SAVE_EVERY, SNGAN_SAMPLES_DIR, SNGAN_CKPT_DIR,
+    SNGAN_SYNTH_DIR, SNGAN_AUG_DIR
 )
 from dataset.loader import setup_dataset, get_dataloaders, get_gan_dataloader
 from models.sngan import SNGenerator, SNCritic
@@ -39,19 +43,7 @@ from train import train_resnet
 from eval import evaluate_on_test, generate_synthetic_images, plot_comparison
 from utils.seed import set_seed
 
-# ══════════════════════════════════════════════════════════════
-# ⚙️ CONFIGURAZIONE SNGAN
-# ══════════════════════════════════════════════════════════════
-SNGAN_EPOCHS       = 300
-SNGAN_LR           = 1e-4     # Stesso LR per G e D (niente TTUR)
-SNGAN_N_CRITIC     = 1        # Hinge+SN non richiede n_critic=5
-SNGAN_D            = 128      # Dim base G e D (come WGAN-GP: GAN_D=128)
-SNGAN_SAVE_EVERY   = 10
-SNGAN_SAMPLES_DIR  = os.path.join(RESULTS_DIR, "sngan_samples")
-SNGAN_CKPT_DIR     = os.path.join(RESULTS_DIR, "sngan_checkpoints")
-SNGAN_SYNTH_DIR    = os.path.join(RESULTS_DIR, "sngan_synthetic_images")
-SNGAN_AUG_DIR      = os.path.join(RESULTS_DIR, "sngan_augmented_dataset")
-# ══════════════════════════════════════════════════════════════
+# Le configurazioni della SNGAN sono ora lette direttamente da config.py
 
 
 def main():

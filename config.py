@@ -52,6 +52,17 @@ GAN_JPEG_QUALITY         = 95    # Qualità JPEG delle immagini sintetiche salva
 GAN_VALIDATE_EVERY       = 50   # Validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS    = 5    # Epoche ResNet ridotte per validazione periodica
 
+# ─── SNGAN (Spectral Normalization GAN) ──────────────────
+SNGAN_EPOCHS       = 300
+SNGAN_LR           = 1e-4     # Stesso LR per G e D (niente TTUR)
+SNGAN_N_CRITIC     = 1        # Hinge+SN non richiede n_critic=5
+SNGAN_D            = 128      # Dim base G e D (come WGAN-GP: GAN_D=128)
+SNGAN_SAVE_EVERY   = 10
+SNGAN_SAMPLES_DIR  = os.path.join(RESULTS_DIR, "sngan_samples")
+SNGAN_CKPT_DIR     = os.path.join(RESULTS_DIR, "sngan_checkpoints")
+SNGAN_SYNTH_DIR    = os.path.join(RESULTS_DIR, "sngan_synthetic_images")
+SNGAN_AUG_DIR      = os.path.join(RESULTS_DIR, "sngan_augmented_dataset")
+
 # ─── DANN (Domain Adaptation) ────────────────────────────
 DANN_SOURCE_DIR      = os.path.join(DATA_DIR, "source_domain")     # Pediatrico (Source)
 DANN_TARGET_DIR      = os.path.join(DATA_DIR, "target_domain")  # Adulti (Target)
