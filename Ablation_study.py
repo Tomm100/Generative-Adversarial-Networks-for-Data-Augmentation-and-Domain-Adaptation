@@ -17,7 +17,7 @@ from models.sngan import SNGenerator as Generator
 # ==============================================================================
 from dataset.loader import setup_dataset, get_dataloaders
 from train import train_resnet
-from models.resnet import ResNetClassifier # Come richiesto, anche se train_resnet lo usa internamente
+import wandb
 from eval import evaluate_on_test, generate_synthetic_images
 from utils.seed import set_seed
 from config import (
@@ -31,6 +31,17 @@ def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Avvio Ablation Study su {device}")
+    
+    wandb.init(
+        project="gan-chest-xray-augmentation",
+        entity="MachineLearningForVisionAndMultimedia",
+        name="Ablation_Study_SNGAN",
+        config={
+            "resnet_epochs": RESNET_EPOCHS,
+            "gan_type": "SNGAN",
+            "percentages": [0, 25, 50, 75, 100]
+        }
+    )
     
     if not os.path.exists(DUMMY_GAN_WEIGHTS_PATH):
         print(f"ERRORE: Il file {DUMMY_GAN_WEIGHTS_PATH} non esiste.")
@@ -111,11 +122,11 @@ def main():
             img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE
         )
         
-        # Train ResNet (Fisso a 30 epoche per far emergere lo Shortcut Learning)
+        # Train ResNet (Usa RESNET_EPOCHS importato dal config)
         tag = f"Ablation_{p}pct"
         resnet_model, _, ckpt_path = train_resnet(
             aug_loader, val_loader, device,
-            epochs=30, lr=RESNET_LR, tag=tag
+            epochs=RESNET_EPOCHS, lr=RESNET_LR, tag=tag
         )
         
         # Valutazione finale
@@ -128,6 +139,7 @@ def main():
         f1_normal = report['NORMAL']['f1-score']
         results_f1.append(f1_normal)
         print(f"Risultato {p}% -> F1-Score NORMAL: {f1_normal:.4f}")
+        wandb.log({f"Ablation/F1_NORMAL_{p}pct": f1_normal})
 
     # 6. Plot dei risultati
     print("\nGenerazione Grafico Ablation...")
@@ -142,6 +154,10 @@ def main():
     plot_path = os.path.join(RESULTS_DIR, 'ablation_study_results.png')
     plt.savefig(plot_path, dpi=150)
     print(f"Grafico salvato in: {plot_path}")
+    
+    wandb.log({"Ablation/Plot_Results": wandb.Image(plot_path)})
+    wandb.finish()
+    
     print("\nAblation Study completato con successo!")
 
 if __name__ == '__main__':
