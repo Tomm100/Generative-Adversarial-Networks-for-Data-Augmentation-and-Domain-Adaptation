@@ -3,6 +3,10 @@ import wandb
 import os
 import torch
 import shutil
+import glob
+from PIL import Image
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 from config import (
     DATASET_DIR, GAN_CHECKPOINTS_DIR, GAN_EPOCHS, 
@@ -13,16 +17,39 @@ from models.wgan import Generator
 from eval import generate_synthetic_images
 from utils.seed import set_seed
 
+class ResizedImageDataset(Dataset):
+    def __init__(self, directory, size=(128, 128)):
+        
+        self.files = [
+            f for f in glob.glob(os.path.join(directory, '*.*')) 
+            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+        ]
+        
+        self.transform = transforms.Compose([
+            transforms.Resize(size),
+            transforms.ToTensor() 
+        ])
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.files[idx]).convert('RGB')
+        return self.transform(img)
+# =========================================================
+
 
 def compute_FID_and_KID(real_dir, synth_dir, epoch, device):
     """
-    Calcola FID e KID confrontando due directory e logga i risultati su WandB.
+    Calcola FID e KID confrontando due dataset e logga i risultati su WandB.
     """
     print(f"  Calcolo metriche FID e KID in corso...")
-    
+    real_dataset = ResizedImageDataset(real_dir, size=(128, 128))
+    synth_dataset = ResizedImageDataset(synth_dir, size=(128, 128))
+
     metrics = torch_fidelity.calculate_metrics(
-        input1=synth_dir, 
-        input2=real_dir, 
+        input1=synth_dataset, 
+        input2=real_dataset, 
         cuda=(device.type == 'cuda'), 
         isc=False, 
         fid=True, 
@@ -48,6 +75,9 @@ def compute_FID_and_KID(real_dir, synth_dir, epoch, device):
 def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # NOTA: Stai caricando da SNGAN ma usi il Generator di WGAN.
+    # Funzionerà perché l'architettura è identica, ma occhio se modifichi le reti in futuro!
     checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints/'
 
     wandb.init(
@@ -74,7 +104,7 @@ def main():
         ckpt_path = os.path.join(checkpoints_dir, f'G_epoch_{epoch}.pth')
         if not os.path.exists(ckpt_path):
             print(f"  Checkpoint non trovato per l'epoca {epoch}.")
-            return
+            continue # Meglio "continue" di "return" così salta solo l'epoca mancante e passa alla successiva
 
         print(f"\n{'='*50}\nValutazione Epoca {epoch}\n{'='*50}")
 
