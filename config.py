@@ -19,10 +19,10 @@ CHECKPOINTS_DIR     = os.path.join(RESULTS_DIR, "checkpoints")
 AUGMENTED_DIR       = os.path.join(RESULTS_DIR, "augmented_dataset")
 
 # ─── ResNet ──────────────────────────────────────────────
-RESNET_IMG_SIZE    = 128
+RESNET_IMG_SIZE    = 224
 RESNET_BATCH_SIZE  = 32
 RESNET_EPOCHS      = 10
-RESNET_LR          = 0.001
+RESNET_LR          = 1e-4
 RESNET_NUM_CLASSES = 2
 
 # ─── WGAN-GP ─────────────────────────────────────────────
