@@ -43,7 +43,8 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
         print(f"  [Loss] CrossEntropyLoss con class_weights={class_weights.tolist()}")
     else:
         criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    # Passiamo all'ottimizzatore solo i parametri che non sono congelati (requires_grad=True)
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
 
     best_macro_f1 = -1.0
     best_weights = None
