@@ -8,7 +8,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 from config import (
-    DATASET_DIR, GAN_CHECKPOINTS_DIR, GAN_EPOCHS, 
+    DATASET_DIR, GAN_CHECKPOINTS_DIR, SNGAN_EPOCHS, SNGAN_IMG_SIZE,
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESULTS_DIR
 )
 from dataset.loader import setup_dataset
@@ -18,7 +18,7 @@ from eval import generate_synthetic_images
 from utils.seed import set_seed
 
 class ResizedImageDataset(Dataset):
-    def __init__(self, directory, size=(128, 128)):
+    def __init__(self, directory, size=(SNGAN_IMG_SIZE, SNGAN_IMG_SIZE)):
         
         self.files = [
             f for f in glob.glob(os.path.join(directory, '*.*')) 
@@ -43,8 +43,8 @@ def compute_FID_and_KID(real_dir, synth_dir, epoch, device):
     Calcola FID e KID confrontando due dataset e logga i risultati su WandB.
     """
     print(f"  Calcolo metriche FID e KID in corso...")
-    real_dataset = ResizedImageDataset(real_dir, size=(128, 128))
-    synth_dataset = ResizedImageDataset(synth_dir, size=(128, 128))
+    real_dataset = ResizedImageDataset(real_dir, size=(SNGAN_IMG_SIZE, SNGAN_IMG_SIZE))
+    synth_dataset = ResizedImageDataset(synth_dir, size=(SNGAN_IMG_SIZE, SNGAN_IMG_SIZE))
 
     metrics = torch_fidelity.calculate_metrics(
         input1=synth_dataset, 
@@ -82,7 +82,7 @@ def main():
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
         name="fidelity_evaluation_over_time_SNGAN",
-        config={"seed": SEED, "epochs": GAN_EPOCHS, "model": "SNGAN"}
+        config={"seed": SEED, "epochs": SNGAN_EPOCHS, "model": "SNGAN"}
     )
 
     res = setup_dataset(dataset_dir=DATASET_DIR)
@@ -98,7 +98,7 @@ def main():
 
     G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GAN_D).to(device)
 
-    for epoch in range(10, GAN_EPOCHS + 1, 10):
+    for epoch in range(10, SNGAN_EPOCHS + 1, 10):
         ckpt_path = os.path.join(checkpoints_dir, f'G_epoch_{epoch}.pth')
         if not os.path.exists(ckpt_path):
             print(f"  Checkpoint non trovato per l'epoca {epoch}.")
