@@ -22,6 +22,7 @@ def save_gan_samples(G, fixed_z, fixed_labels, epoch, samples_dir, num_vis=6):
     G.eval()
     with torch.no_grad():
         imgs = G(fixed_z, fixed_labels)
+        imgs = (imgs + 1) / 2  # [-1,1] → [0,1]
     G.train()
 
     fig, axes = plt.subplots(2, num_vis, figsize=(num_vis * 2.5, 5))

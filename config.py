@@ -53,10 +53,12 @@ GAN_VALIDATE_EVERY       = 50   # Validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS    = 5    # Epoche ResNet ridotte per validazione periodica
 
 # ─── SNGAN (Spectral Normalization GAN) ──────────────────
+SNGAN_IMG_SIZE     = 256      # Risoluzione output Generator (256px → no resize loss verso ResNet 224)
 SNGAN_EPOCHS       = 300
-SNGAN_LR           = 1e-4     # Stesso LR per G e D (niente TTUR)
+SNGAN_LR           = 5e-5     # Abbassato da 1e-4: maggiore stabilità a risoluzione alta
 SNGAN_N_CRITIC     = 1        # Hinge+SN non richiede n_critic=5
-SNGAN_D            = 128      # Dim base G e D (come WGAN-GP: GAN_D=128)
+SNGAN_D            = 96       # Larghezza base canali (più parametri rispetto alla versione 128px)
+SNGAN_BATCH_SIZE   = 32       # Ridotto da 64: 256px richiede più VRAM
 SNGAN_SAVE_EVERY   = 10
 SNGAN_SAMPLES_DIR  = os.path.join(RESULTS_DIR, "sngan_samples")
 SNGAN_CKPT_DIR     = os.path.join(RESULTS_DIR, "sngan_checkpoints")

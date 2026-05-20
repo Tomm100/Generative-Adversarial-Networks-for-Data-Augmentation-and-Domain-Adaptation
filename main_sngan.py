@@ -27,19 +27,18 @@ from config import (
     GAN_IMG_SIZE, GAN_BATCH_SIZE, GAN_NZ, GAN_N_CLASS, GAN_NC,
     GAN_BETA1, GAN_BETA2,
     GAN_NUM_VIS_SAMPLES,
-    GAN_VALIDATE_EVERY, GAN_VAL_RESNET_EPOCHS,
     GAN_DRIVE_BACKUP_EVERY, GAN_DRIVE_DIR,
     NUM_WORKERS, PIN_MEMORY,
     SEED,
     # SNGAN Configs
     SNGAN_EPOCHS, SNGAN_LR, SNGAN_N_CRITIC, SNGAN_D,
+    SNGAN_IMG_SIZE, SNGAN_BATCH_SIZE,
     SNGAN_SAVE_EVERY, SNGAN_SAMPLES_DIR, SNGAN_CKPT_DIR,
     SNGAN_SYNTH_DIR, SNGAN_AUG_DIR
 )
 from dataset.loader import setup_dataset, get_dataloaders, get_gan_dataloader
 from models.sngan import SNGenerator, SNCritic
-from train_sngan import train_sngan
-from train import train_resnet
+from train import train_resnet, train_sngan
 from eval import evaluate_on_test, generate_synthetic_images, plot_comparison
 from utils.seed import set_seed
 
@@ -111,7 +110,7 @@ def main():
     print(f"\n{'='*60}\n  PHASE 2: Training SNGAN\n{'='*60}")
 
     gan_loader, _ = get_gan_dataloader(
-        train_dir, img_size=GAN_IMG_SIZE, batch_size=GAN_BATCH_SIZE)
+        train_dir, img_size=SNGAN_IMG_SIZE, batch_size=SNGAN_BATCH_SIZE)
 
     G = SNGenerator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=SNGAN_D).to(device)
     D = SNCritic(nc=GAN_NC, n_class=GAN_N_CLASS, d=SNGAN_D).to(device)
