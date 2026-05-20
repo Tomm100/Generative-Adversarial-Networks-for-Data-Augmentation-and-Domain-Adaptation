@@ -41,9 +41,9 @@ class SNGenerator(nn.Module):
         nz:      dimensione dello spazio latente
         n_class: numero di classi (per la label one-hot condizionale)
         nc:      canali output (1 = grayscale)
-        d:       larghezza base dei canali (raccomandato 96 o 128 per 256px)
+        d:       larghezza base dei canali (128 consigliato)
     """
-    def __init__(self, nz=100, n_class=2, nc=1, d=96):
+    def __init__(self, nz=100, n_class=2, nc=1, d=128):
         super().__init__()
         # 1x1 → 4x4
         self.deconv1    = nn.ConvTranspose2d(nz + n_class, d * 8, 4, 1, 0)

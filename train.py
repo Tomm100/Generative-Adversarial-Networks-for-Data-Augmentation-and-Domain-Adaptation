@@ -14,8 +14,10 @@ from config import (
     GAN_EPSILON_PENALTY_COEFF, GAN_NUM_VIS_SAMPLES,
     GAN_DRIVE_BACKUP_EVERY, GAN_DRIVE_DIR,
 )
+import shutil
 from models.resnet import ResNetClassifier
-from models.wgan import weights_init
+from models.wgan import weights_init as wgan_weights_init
+from models.sngan import weights_init as sngan_weights_init
 from utils.visualization import save_gan_samples
 
 def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Phase1",
@@ -154,15 +156,15 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         (G, g_final_path)
     """
     import os
-    import shutil
+
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(samples_dir, exist_ok=True)
 
 
 
     # --- Inizializzazione pesi ---
-    G.apply(weights_init)
-    D.apply(weights_init)
+    G.apply(wgan_weights_init)
+    D.apply(wgan_weights_init)
 
     # --- Ottimizzatori + LR Scheduler ---
     G_opt = optim.Adam(G.parameters(), lr=lr, betas=(beta1, beta2))
@@ -314,7 +316,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             if (drive_dir and drive_backup_every > 0
                     and epoch % drive_backup_every == 0):
                 if os.path.isdir(os.path.dirname(drive_dir)) or os.path.exists(drive_dir):
-                    import shutil
+
                     os.makedirs(drive_dir, exist_ok=True)
                     shutil.copy(g_path, os.path.join(drive_dir, f'G_epoch_{epoch}.pth'))
                     shutil.copy(d_path, os.path.join(drive_dir, f'D_epoch_{epoch}.pth'))
@@ -367,8 +369,7 @@ def train_sngan(
 
 
     # Inizializzazione pesi (solo Generator — Critic gestito da SN)
-    from models.sngan import weights_init
-    G.apply(weights_init)
+    G.apply(sngan_weights_init)
     # NON applico weights_init al Critic: la SN gestisce già la scala dei pesi
 
     # Stesso LR per G e D (niente TTUR — lezione imparata dalla SAGAN)
@@ -380,7 +381,7 @@ def train_sngan(
     D_sched = optim.lr_scheduler.LinearLR(D_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
 
     # Label condizionali (stessa struttura della WGAN-GP)
-    img_size = gan_loader.dataset[0][0].shape[1]  # 128
+    img_size = gan_loader.dataset[0][0].shape[1]  # es. 256 per SNGAN
     onehot = torch.eye(n_class).view(n_class, n_class, 1, 1).to(device)
     fill = torch.zeros([n_class, n_class, img_size, img_size]).to(device)
     for i in range(n_class):
@@ -498,7 +499,7 @@ def train_sngan(
             if (drive_dir and drive_backup_every > 0
                     and epoch % drive_backup_every == 0):
                 if os.path.isdir(os.path.dirname(drive_dir)) or os.path.exists(drive_dir):
-                    import shutil
+
                     os.makedirs(drive_dir, exist_ok=True)
                     shutil.copy(g_path, os.path.join(drive_dir, f'G_sngan_epoch_{epoch}.pth'))
                     shutil.copy(d_path, os.path.join(drive_dir, f'D_sngan_epoch_{epoch}.pth'))

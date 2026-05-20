@@ -24,11 +24,9 @@ import wandb
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
-    GAN_IMG_SIZE, GAN_BATCH_SIZE, GAN_NZ, GAN_N_CLASS, GAN_NC,
+    GAN_NZ, GAN_N_CLASS, GAN_NC,
     GAN_BETA1, GAN_BETA2,
-    GAN_NUM_VIS_SAMPLES,
     GAN_DRIVE_BACKUP_EVERY, GAN_DRIVE_DIR,
-    NUM_WORKERS, PIN_MEMORY,
     SEED,
     # SNGAN Configs
     SNGAN_EPOCHS, SNGAN_LR, SNGAN_N_CRITIC, SNGAN_D,
@@ -59,8 +57,8 @@ def main():
             "architecture": "SNGAN",
             "loss":         "Hinge",
             "normalization":"Spectral Norm (Critic only)",
-            "img_size":     GAN_IMG_SIZE,
-            "batch_size":   GAN_BATCH_SIZE,
+            "img_size":     SNGAN_IMG_SIZE,
+            "batch_size":   SNGAN_BATCH_SIZE,
             "epochs":       SNGAN_EPOCHS,
             "lr":           SNGAN_LR,
             "n_critic":     SNGAN_N_CRITIC,
@@ -120,7 +118,7 @@ def main():
     print(f"  Generator params:     {total_g:,}")
     print(f"  Critic params:        {total_d:,}")
 
-    G, g_ckpt, best_epoch, val_hist = train_sngan(
+    G, g_ckpt = train_sngan(
         G, D, gan_loader, device,
         nz=GAN_NZ, n_class=GAN_N_CLASS,
         lr=SNGAN_LR,
@@ -131,25 +129,12 @@ def main():
         save_every=SNGAN_SAVE_EVERY,
         drive_dir=GAN_DRIVE_DIR,
         drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
-        validate_every=GAN_VALIDATE_EVERY,
-        resnet_epochs=GAN_VAL_RESNET_EPOCHS,
-        train_dir=train_dir, val_dir=val_dir,
-        num_gen_normal=num_gen_normal, num_gen_pneumonia=num_gen_pneumonia,
-        resnet_img_size=RESNET_IMG_SIZE, resnet_batch_size=RESNET_BATCH_SIZE,
-        augmented_dir=SNGAN_AUG_DIR,
     )
 
     # ══════════════════════════════════════════════════════════
     #  PHASE 3: RESNET SU DATASET AUGMENTED (SNGAN)
     # ══════════════════════════════════════════════════════════
     print(f"\n{'='*60}\n  PHASE 3: ResNet su Dataset Augmented (SNGAN)\n{'='*60}")
-
-    # Usa checkpoint migliore TSTR se disponibile, altrimenti ultimo
-    if best_epoch > 0:
-        best_g = os.path.join(SNGAN_CKPT_DIR, f'G_epoch_{best_epoch}.pth')
-        if os.path.exists(best_g):
-            G.load_state_dict(torch.load(best_g, map_location=device))
-            print(f"  Caricato G_epoch_{best_epoch}.pth (best TSTR)")
 
     generate_synthetic_images(
         G, num_gen_normal, num_gen_pneumonia,
@@ -183,25 +168,10 @@ def main():
         resnet_aug, ckpt_p3, test_loader, classes, device,
         tag="Phase3", out_dir=METRICS_DIR)
 
-    # ══════════════════════════════════════════════════════════
-    #  CONFRONTO FINALE
-    # ══════════════════════════════════════════════════════════
-    print(f"\n{'='*60}")
-    print(f"  CONFRONTO: Phase 1 (Baseline) vs Phase 3 (SNGAN Augmented)")
-    print(f"{'='*60}")
-
-    for cls in classes:
-        for m in ['precision', 'recall', 'f1-score']:
-            v1 = report_p1[cls][m]
-            v3 = report_p3[cls][m]
-            d  = v3 - v1
-            print(f"  {cls} {m:12s}: {v1:.4f} → {v3:.4f}  "
-                  f"({'↑' if d > 0 else '↓'} {abs(d):.4f})")
-
-    acc1 = report_p1['accuracy']
-    acc3 = report_p3['accuracy']
-    print(f"\n  Overall Acc: {acc1:.4f} → {acc3:.4f}  "
-          f"({'↑' if acc3 > acc1 else '↓'} {abs(acc3 - acc1):.4f})")
+    # ── Confronto finale ──
+    plot_comparison(
+        hist_p1, hist_p3, cm_p1, cm_p3, classes,
+        report_p1, report_p3, out_dir=METRICS_DIR)
 
     wandb.finish()
     print(f"\n  ✅ Pipeline SNGAN completata!")

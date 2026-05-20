@@ -57,8 +57,8 @@ SNGAN_IMG_SIZE     = 256      # Risoluzione output Generator (256px → no resiz
 SNGAN_EPOCHS       = 300
 SNGAN_LR           = 5e-5     # Abbassato da 1e-4: maggiore stabilità a risoluzione alta
 SNGAN_N_CRITIC     = 1        # Hinge+SN non richiede n_critic=5
-SNGAN_D            = 96       # Larghezza base canali (più parametri rispetto alla versione 128px)
-SNGAN_BATCH_SIZE   = 32       # Ridotto da 64: 256px richiede più VRAM
+SNGAN_D            = 128      # Larghezza base canali (identico alla WGAN-GP, A100 non ha vincoli VRAM)
+SNGAN_BATCH_SIZE   = 64       # Batch size (A100 ha VRAM sufficiente anche a 256px)
 SNGAN_SAVE_EVERY   = 10
 SNGAN_SAMPLES_DIR  = os.path.join(RESULTS_DIR, "sngan_samples")
 SNGAN_CKPT_DIR     = os.path.join(RESULTS_DIR, "sngan_checkpoints")
