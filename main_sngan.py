@@ -35,7 +35,7 @@ from config import (
     SNGAN_SYNTH_DIR, SNGAN_AUG_DIR
 )
 from dataset.loader import setup_dataset, get_dataloaders, get_gan_dataloader
-from models.sngan_128 import SNGenerator, SNCritic
+from models.sngan import SNGenerator, SNCritic
 from train import train_resnet, train_sngan
 from eval import evaluate_on_test, generate_synthetic_images, plot_comparison
 from utils.seed import set_seed
