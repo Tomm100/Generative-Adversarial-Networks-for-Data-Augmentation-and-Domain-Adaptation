@@ -12,7 +12,7 @@ from config import (
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESULTS_DIR
 )
 from dataset.loader import setup_dataset
-from models.sngan import SNGenerator as Generator
+from models.sngan_128 import SNGenerator as Generator
 
 from eval import generate_synthetic_images
 from utils.seed import set_seed
@@ -76,7 +76,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     
-    checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_256/sngan_checkpoints/'
+    checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/'
 
     wandb.init(
         project="gan-chest-xray-augmentation",
