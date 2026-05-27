@@ -248,12 +248,15 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                 G.zero_grad()
                 z = torch.randn(mb, nz, 1, 1).to(device)
                 
-                # Approccio simil-BAGAN: Forza il batch del Generatore a essere esattamente 50/50
-                half_mb = mb // 2
-                zeros = torch.zeros(half_mb, dtype=torch.long)
-                ones = torch.ones(mb - half_mb, dtype=torch.long)
-                y_gen_unshuffled = torch.cat([zeros, ones])
-                y_gen = y_gen_unshuffled[torch.randperm(mb)].to(device)
+                # --- ABLATION: SENZA BAGAN (usa la distribuzione sbilanciata reale) ---
+                y_gen = y_
+                
+                # (Codice BAGAN originale commentato)
+                # half_mb = mb // 2
+                # zeros = torch.zeros(half_mb, dtype=torch.long)
+                # ones = torch.ones(mb - half_mb, dtype=torch.long)
+                # y_gen_unshuffled = torch.cat([zeros, ones])
+                # y_gen = y_gen_unshuffled[torch.randperm(mb)].to(device)
                 
                 g_loss = -D(G(z, onehot[y_gen]), fill[y_gen]).squeeze().mean()
                 g_loss.backward()

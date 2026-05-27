@@ -115,14 +115,18 @@ class SNCritic(nn.Module):
         # 32 → 16 (stride=2)
         self.conv3 = spectral_norm(nn.Conv2d(d * 2, d * 4, 4, 2, 1))
 
-        # 16 → 16 (stride=1, PatchGAN)
-        self.conv4 = spectral_norm(nn.Conv2d(d * 4, d * 8, 3, 1, 1))
+        # --- ABLATION: SENZA PATCHGAN (Standard DCGAN) ---
+        # 16x16 -> 8x8
+        self.conv4 = spectral_norm(nn.Conv2d(d * 4, d * 8, 4, 2, 1))
+        # 8x8 -> 4x4
+        self.conv5 = spectral_norm(nn.Conv2d(d * 8, d * 8, 4, 2, 1))
+        # 4x4 -> 1x1
+        self.conv6 = spectral_norm(nn.Conv2d(d * 8, 1, 4, 1, 0))
 
-        # 16 → 16 (stride=1, PatchGAN)
-        self.conv5 = spectral_norm(nn.Conv2d(d * 8, d * 8, 3, 1, 1))
-
-        # 16 → 16 (output)
-        self.conv6 = spectral_norm(nn.Conv2d(d * 8, 1, 3, 1, 1))
+        # (Codice PatchGAN originale commentato)
+        # self.conv4 = spectral_norm(nn.Conv2d(d * 4, d * 8, 3, 1, 1))
+        # self.conv5 = spectral_norm(nn.Conv2d(d * 8, d * 8, 3, 1, 1))
+        # self.conv6 = spectral_norm(nn.Conv2d(d * 8, 1, 3, 1, 1))
 
     def forward(self, img, label):
         x = torch.cat([img, label], 1)
@@ -130,6 +134,13 @@ class SNCritic(nn.Module):
         x = F.leaky_relu(self.conv1(x), 0.2)   # 64x64
         x = F.leaky_relu(self.conv2(x), 0.2)   # 32x32
         x = F.leaky_relu(self.conv3(x), 0.2)   # 16x16
-        x = F.leaky_relu(self.conv4(x), 0.2)   # 16x16
-        x = F.leaky_relu(self.conv5(x), 0.2)   # 16x16
-        return self.conv6(x)                    # [B, 1, 16, 16]
+        
+        # --- ABLATION: SENZA PATCHGAN ---
+        x = F.leaky_relu(self.conv4(x), 0.2)   # 8x8
+        x = F.leaky_relu(self.conv5(x), 0.2)   # 4x4
+        return self.conv6(x)                   # [B, 1, 1, 1]
+
+        # (Codice PatchGAN originale commentato)
+        # x = F.leaky_relu(self.conv4(x), 0.2)   # 16x16
+        # x = F.leaky_relu(self.conv5(x), 0.2)   # 16x16
+        # return self.conv6(x)                   # [B, 1, 16, 16]

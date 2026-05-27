@@ -120,16 +120,24 @@ class Critic(nn.Module):
         self.conv3 = nn.Conv2d(d*2, d*4, 4, 2, 1)
         self.conv3_in = nn.InstanceNorm2d(d*4, affine=True)
 
-        # 16 -> 16 (stride=1, PatchGAN: mantiene la risoluzione spaziale)
-        self.conv4 = nn.Conv2d(d*4, d*8, 3, 1, 1)
+        # --- ABLATION: SENZA PATCHGAN (Standard DCGAN Critic) ---
+        # 16x16 -> 8x8
+        self.conv4 = nn.Conv2d(d*4, d*8, 4, 2, 1)
         self.conv4_in = nn.InstanceNorm2d(d*8, affine=True)
 
-        # 16 -> 16 (stride=1, PatchGAN)
-        self.conv5 = nn.Conv2d(d*8, d*8, 3, 1, 1)
+        # 8x8 -> 4x4
+        self.conv5 = nn.Conv2d(d*8, d*8, 4, 2, 1)
         self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
 
-        # 16 -> 16 (output: 1 canale, griglia di giudizi)
-        self.conv6 = nn.Conv2d(d*8, 1, 3, 1, 1)
+        # 4x4 -> 1x1
+        self.conv6 = nn.Conv2d(d*8, 1, 4, 1, 0)
+
+        # (Codice PatchGAN originale commentato)
+        # self.conv4 = nn.Conv2d(d*4, d*8, 3, 1, 1)
+        # self.conv4_in = nn.InstanceNorm2d(d*8, affine=True)
+        # self.conv5 = nn.Conv2d(d*8, d*8, 3, 1, 1)
+        # self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
+        # self.conv6 = nn.Conv2d(d*8, 1, 3, 1, 1)
 
     def forward(self, img, label):
         # Concatena immagine e mappa condizionale
@@ -139,9 +147,16 @@ class Critic(nn.Module):
         x = F.leaky_relu(self.conv1(x), 0.2)              # [B, d,   64, 64]
         x = F.leaky_relu(self.conv2_in(self.conv2(x)), 0.2)  # [B, d*2, 32, 32]
         x = F.leaky_relu(self.conv3_in(self.conv3(x)), 0.2)  # [B, d*4, 16, 16]
-        x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)  # [B, d*8, 16, 16]
-        x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)  # [B, d*8, 16, 16]
-        return self.conv6(x)                                   # [B, 1,   16, 16]
+        
+        # --- ABLATION: SENZA PATCHGAN ---
+        x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)  # [B, d*8, 8, 8]
+        x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)  # [B, d*8, 4, 4]
+        return self.conv6(x)                                   # [B, 1,   1, 1]
+
+        # (Codice PatchGAN originale commentato)
+        # x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)  # [B, d*8, 16, 16]
+        # x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)  # [B, d*8, 16, 16]
+        # return self.conv6(x)                                   # [B, 1,   16, 16]
 
 
 def compute_gp(D, real, fake, real_lbl, fake_lbl, device, lambda_gp=10):
