@@ -12,7 +12,7 @@ from config import (
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESULTS_DIR
 )
 from dataset.loader import setup_dataset
-from models.wgan import Generator
+from models.sngan import SNGenerator as Generator
 
 from eval import generate_synthetic_images
 from utils.seed import set_seed
@@ -76,13 +76,13 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     
-    checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_WGAN_Pg_Bg_128/gan_checkpoints/'
+    checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_256/sngan_checkpoints/'
 
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name="fidelity_evaluation_over_time_WGAN",
-        config={"seed": SEED, "epochs": SNGAN_EPOCHS, "model": "WGAN"}
+        name="fidelity_evaluation_over_time_SNGAN",
+        config={"seed": SEED, "epochs": SNGAN_EPOCHS, "model": "SNGAN"}
     )
 
     res = setup_dataset(dataset_dir=DATASET_DIR)
