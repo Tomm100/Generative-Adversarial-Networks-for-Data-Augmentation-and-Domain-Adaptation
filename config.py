@@ -53,7 +53,7 @@ GAN_VALIDATE_EVERY       = 50   # Validazione ogni N epoche GAN
 GAN_VAL_RESNET_EPOCHS    = 5    # Epoche ResNet ridotte per validazione periodica
 
 # ─── SNGAN (Spectral Normalization GAN) ──────────────────
-SNGAN_IMG_SIZE     = 256      # Risoluzione output Generator (256px → no resize loss verso ResNet 224)
+SNGAN_IMG_SIZE     = 128      # Risoluzione output Generator (128px per esperimenti ablation)
 SNGAN_EPOCHS       = 300
 SNGAN_LR           = 5e-5     # Abbassato da 1e-4: maggiore stabilità a risoluzione alta
 SNGAN_N_CRITIC     = 1        # Hinge+SN non richiede n_critic=5
