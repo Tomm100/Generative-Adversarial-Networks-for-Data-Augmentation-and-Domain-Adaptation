@@ -131,6 +131,7 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                  save_every=20,
                  models_dir='gan_checkpoints',
                  samples_dir='gan_samples',
+                 use_bagan=True,
                  # --- Backup Google Drive ---
                  drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
                  drive_dir=GAN_DRIVE_DIR):
@@ -248,15 +249,16 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                 G.zero_grad()
                 z = torch.randn(mb, nz, 1, 1).to(device)
                 
-                # --- ABLATION: SENZA BAGAN (usa la distribuzione sbilanciata reale) ---
-                # y_gen = y_
-                
-                # (Codice BAGAN originale ripristinato)
-                half_mb = mb // 2
-                zeros = torch.zeros(half_mb, dtype=torch.long)
-                ones = torch.ones(mb - half_mb, dtype=torch.long)
-                y_gen_unshuffled = torch.cat([zeros, ones])
-                y_gen = y_gen_unshuffled[torch.randperm(mb)].to(device)
+                if use_bagan:
+                    # BAGAN: bilanciamento 50/50 delle label per il Generator
+                    half_mb = mb // 2
+                    zeros = torch.zeros(half_mb, dtype=torch.long)
+                    ones = torch.ones(mb - half_mb, dtype=torch.long)
+                    y_gen_unshuffled = torch.cat([zeros, ones])
+                    y_gen = y_gen_unshuffled[torch.randperm(mb)].to(device)
+                else:
+                    # Senza BAGAN: usa la distribuzione sbilanciata reale
+                    y_gen = y_
                 
                 g_loss = -D(G(z, onehot[y_gen]), fill[y_gen]).squeeze().mean()
                 g_loss.backward()
@@ -355,6 +357,7 @@ def train_sngan(
     save_every=10,
     drive_dir=None,
     drive_backup_every=50,
+    use_bagan=True,
 ):
     """
     Training loop SNGAN con Hinge Loss.
@@ -443,12 +446,16 @@ def train_sngan(
                 G.zero_grad()
                 z = torch.randn(mb, nz, 1, 1).to(device)
 
-                # 50/50 bilanciamento label
-                half = mb // 2
-                y_gen = torch.cat([
-                    torch.zeros(half, dtype=torch.long),
-                    torch.ones(mb - half, dtype=torch.long)
-                ])[torch.randperm(mb)].to(device)
+                if use_bagan:
+                    # BAGAN: bilanciamento 50/50 delle label per il Generator
+                    half = mb // 2
+                    y_gen = torch.cat([
+                        torch.zeros(half, dtype=torch.long),
+                        torch.ones(mb - half, dtype=torch.long)
+                    ])[torch.randperm(mb)].to(device)
+                else:
+                    # Senza BAGAN: usa la distribuzione sbilanciata reale
+                    y_gen = y_
 
                 g_out = D(G(z, onehot[y_gen]), fill[y_gen])
                 g_loss = -g_out.mean()

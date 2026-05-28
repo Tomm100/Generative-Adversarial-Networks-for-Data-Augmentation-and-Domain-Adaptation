@@ -88,19 +88,10 @@ class Critic(nn.Module):
     """
     PatchGAN Critic 128x128 per conditional WGAN-GP.
 
-    Differenza rispetto alla versione originale:
-    - Output NON è uno scalare 1x1 ma una griglia 16x16.
-    - Ogni cella della griglia valuta un "patch" locale dell'immagine.
-    - Il Critic produce 256 giudizi indipendenti, forzando il Generator
-      a curare le texture ad alta frequenza in ogni zona dell'immagine.
+    Output: griglia 16x16 — ogni cella valuta un patch locale dell'immagine,
+    forzando il Generator a curare le texture ad alta frequenza ovunque.
 
-    Flow:
-      128x128 -> 64x64 (stride=2)
-      64x64   -> 32x32 (stride=2)
-      32x32   -> 16x16 (stride=2)
-      16x16   -> 16x16 (stride=1, PatchGAN)
-      16x16   -> 16x16 (stride=1, PatchGAN)
-      16x16   -> 16x16 (stride=1, output)
+    Flow: 128→64(s2) → 32(s2) → 16(s2) → 16(s1) → 16(s1) → 16(output)
 
     Conditional input:
       img:   [B, nc, 128, 128]       immagine (grayscale)
@@ -109,54 +100,83 @@ class Critic(nn.Module):
     """
     def __init__(self, nc=1, n_class=2, d=128):
         super().__init__()
-        # 128 -> 64 (stride=2, downsampling)
+        # 128 -> 64 (stride=2)
         self.conv1 = nn.Conv2d(nc + n_class, d, 4, 2, 1)
 
-        # 64 -> 32 (stride=2, downsampling)
+        # 64 -> 32 (stride=2)
         self.conv2 = nn.Conv2d(d, d*2, 4, 2, 1)
         self.conv2_in = nn.InstanceNorm2d(d*2, affine=True)
 
-        # 32 -> 16 (stride=2, downsampling)
+        # 32 -> 16 (stride=2)
         self.conv3 = nn.Conv2d(d*2, d*4, 4, 2, 1)
         self.conv3_in = nn.InstanceNorm2d(d*4, affine=True)
 
-        # --- ABLATION: SENZA PATCHGAN (Standard DCGAN Critic) ---
-        # 16x16 -> 8x8
-        # self.conv4 = nn.Conv2d(d*4, d*8, 4, 2, 1)
-        # self.conv4_in = nn.InstanceNorm2d(d*8, affine=True)
-
-        # 8x8 -> 4x4
-        # self.conv5 = nn.Conv2d(d*8, d*8, 4, 2, 1)
-        # self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
-
-        # 4x4 -> 1x1
-        # self.conv6 = nn.Conv2d(d*8, 1, 4, 1, 0)
-
-        # (Codice PatchGAN originale ripristinato)
+        # 16 -> 16 (stride=1, PatchGAN)
         self.conv4 = nn.Conv2d(d*4, d*8, 3, 1, 1)
         self.conv4_in = nn.InstanceNorm2d(d*8, affine=True)
+
+        # 16 -> 16 (stride=1, PatchGAN)
         self.conv5 = nn.Conv2d(d*8, d*8, 3, 1, 1)
         self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
+
+        # 16 -> 16 (output)
         self.conv6 = nn.Conv2d(d*8, 1, 3, 1, 1)
 
     def forward(self, img, label):
-        # Concatena immagine e mappa condizionale
-        # img: [B, nc, 128, 128], label: [B, n_class, 128, 128]
         x = torch.cat([img, label], 1)
-
-        x = F.leaky_relu(self.conv1(x), 0.2)              # [B, d,   64, 64]
+        x = F.leaky_relu(self.conv1(x), 0.2)                 # [B, d,   64, 64]
         x = F.leaky_relu(self.conv2_in(self.conv2(x)), 0.2)  # [B, d*2, 32, 32]
         x = F.leaky_relu(self.conv3_in(self.conv3(x)), 0.2)  # [B, d*4, 16, 16]
-        
-        # --- ABLATION: SENZA PATCHGAN ---
-        # x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)  # [B, d*8, 8, 8]
-        # x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)  # [B, d*8, 4, 4]
-        # return self.conv6(x)                                   # [B, 1,   1, 1]
-
-        # (Codice PatchGAN originale ripristinato)
         x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)  # [B, d*8, 16, 16]
         x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)  # [B, d*8, 16, 16]
-        return self.conv6(x)                                   # [B, 1,   16, 16]
+        return self.conv6(x)                                  # [B, 1,   16, 16]
+
+
+class CriticNoPG(nn.Module):
+    """
+    Standard DCGAN Critic 128x128 per conditional WGAN-GP (senza PatchGAN).
+
+    Output: scalare 1x1 — giudizio globale sull'intera immagine.
+
+    Flow: 128→64(s2) → 32(s2) → 16(s2) → 8(s2) → 4(s2) → 1(output)
+
+    Conditional input:
+      img:   [B, nc, 128, 128]       immagine (grayscale)
+      label: [B, n_class, 128, 128]  spatial label map (fill tensor)
+      → concatenati lungo dim=1 → [B, nc + n_class, 128, 128]
+    """
+    def __init__(self, nc=1, n_class=2, d=128):
+        super().__init__()
+        # 128 -> 64 (stride=2)
+        self.conv1 = nn.Conv2d(nc + n_class, d, 4, 2, 1)
+
+        # 64 -> 32 (stride=2)
+        self.conv2 = nn.Conv2d(d, d*2, 4, 2, 1)
+        self.conv2_in = nn.InstanceNorm2d(d*2, affine=True)
+
+        # 32 -> 16 (stride=2)
+        self.conv3 = nn.Conv2d(d*2, d*4, 4, 2, 1)
+        self.conv3_in = nn.InstanceNorm2d(d*4, affine=True)
+
+        # 16 -> 8 (stride=2)
+        self.conv4 = nn.Conv2d(d*4, d*8, 4, 2, 1)
+        self.conv4_in = nn.InstanceNorm2d(d*8, affine=True)
+
+        # 8 -> 4 (stride=2)
+        self.conv5 = nn.Conv2d(d*8, d*8, 4, 2, 1)
+        self.conv5_in = nn.InstanceNorm2d(d*8, affine=True)
+
+        # 4 -> 1 (output)
+        self.conv6 = nn.Conv2d(d*8, 1, 4, 1, 0)
+
+    def forward(self, img, label):
+        x = torch.cat([img, label], 1)
+        x = F.leaky_relu(self.conv1(x), 0.2)                 # [B, d,   64, 64]
+        x = F.leaky_relu(self.conv2_in(self.conv2(x)), 0.2)  # [B, d*2, 32, 32]
+        x = F.leaky_relu(self.conv3_in(self.conv3(x)), 0.2)  # [B, d*4, 16, 16]
+        x = F.leaky_relu(self.conv4_in(self.conv4(x)), 0.2)  # [B, d*8,  8,  8]
+        x = F.leaky_relu(self.conv5_in(self.conv5(x)), 0.2)  # [B, d*8,  4,  4]
+        return self.conv6(x)                                  # [B, 1,    1,  1]
 
 
 def compute_gp(D, real, fake, real_lbl, fake_lbl, device, lambda_gp=10):

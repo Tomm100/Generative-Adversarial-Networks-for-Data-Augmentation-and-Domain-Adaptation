@@ -93,8 +93,8 @@ class SNCritic(nn.Module):
     """
     PatchGAN Critic 256x256 condizionale con Spectral Normalization.
 
-    Flow: 256 → 128(s2) → 64(s2) → 32(s2) → 16(s2) → 16(s1) → 16(s1) → 16(output)
-    Output: griglia PatchGAN 16x16 (invariata rispetto alla versione 128px).
+    Flow: 256→128(s2) → 64(s2) → 32(s2) → 16(s2) → 16(s1) → 16(s1) → 16(output)
+    Output: griglia PatchGAN 16x16.
 
     Args:
         nc:      canali input (1 = grayscale)
@@ -115,17 +115,13 @@ class SNCritic(nn.Module):
         # 32 → 16 (stride=2)
         self.conv3 = spectral_norm(nn.Conv2d(d * 2, d * 4, 4, 2, 1))
 
-        # --- ABLATION: SENZA PATCHGAN (Standard DCGAN) ---
-        # 16x16 -> 8x8
-        # self.conv4 = spectral_norm(nn.Conv2d(d * 4, d * 8, 4, 2, 1))
-        # 8x8 -> 4x4
-        # self.conv5 = spectral_norm(nn.Conv2d(d * 8, d * 8, 4, 2, 1))
-        # 4x4 -> 1x1
-        # self.conv6 = spectral_norm(nn.Conv2d(d * 8, 1, 4, 1, 0))
-
-        # (Codice PatchGAN originale ripristinato)
+        # 16 → 16 (stride=1, PatchGAN)
         self.conv4 = spectral_norm(nn.Conv2d(d * 4, d * 8, 3, 1, 1))
+
+        # 16 → 16 (stride=1, PatchGAN)
         self.conv5 = spectral_norm(nn.Conv2d(d * 8, d * 8, 3, 1, 1))
+
+        # 16 → 16 (output)
         self.conv6 = spectral_norm(nn.Conv2d(d * 8, 1, 3, 1, 1))
 
     def forward(self, img, label):
@@ -134,13 +130,53 @@ class SNCritic(nn.Module):
         x = F.leaky_relu(self.conv1(x), 0.2)   # 64x64
         x = F.leaky_relu(self.conv2(x), 0.2)   # 32x32
         x = F.leaky_relu(self.conv3(x), 0.2)   # 16x16
-        
-        # --- ABLATION: SENZA PATCHGAN ---
-        # x = F.leaky_relu(self.conv4(x), 0.2)   # 8x8
-        # x = F.leaky_relu(self.conv5(x), 0.2)   # 4x4
-        # return self.conv6(x)                   # [B, 1, 1, 1]
-
-        # (Codice PatchGAN originale ripristinato)
         x = F.leaky_relu(self.conv4(x), 0.2)   # 16x16
         x = F.leaky_relu(self.conv5(x), 0.2)   # 16x16
-        return self.conv6(x)                   # [B, 1, 16, 16]
+        return self.conv6(x)                    # [B, 1, 16, 16]
+
+
+class SNCriticNoPG(nn.Module):
+    """
+    Standard DCGAN Critic 256x256 condizionale con Spectral Normalization (senza PatchGAN).
+
+    Flow: 256→128(s2) → 64(s2) → 32(s2) → 16(s2) → 8(s2) → 4(s2) → 1(output)
+    Output: scalare 1x1 — giudizio globale sull'intera immagine.
+
+    Args:
+        nc:      canali input (1 = grayscale)
+        n_class: numero di classi (per la fill-map condizionale)
+        d:       larghezza base dei canali
+    """
+    def __init__(self, nc=1, n_class=2, d=128):
+        super().__init__()
+        # 256 → 128 (stride=2) — layer aggiunto per 256px
+        self.conv0 = spectral_norm(nn.Conv2d(nc + n_class, d // 2, 4, 2, 1))
+
+        # 128 → 64 (stride=2)
+        self.conv1 = spectral_norm(nn.Conv2d(d // 2, d, 4, 2, 1))
+
+        # 64 → 32 (stride=2)
+        self.conv2 = spectral_norm(nn.Conv2d(d, d * 2, 4, 2, 1))
+
+        # 32 → 16 (stride=2)
+        self.conv3 = spectral_norm(nn.Conv2d(d * 2, d * 4, 4, 2, 1))
+
+        # 16 → 8 (stride=2)
+        self.conv4 = spectral_norm(nn.Conv2d(d * 4, d * 8, 4, 2, 1))
+
+        # 8 → 4 (stride=2)
+        self.conv5 = spectral_norm(nn.Conv2d(d * 8, d * 8, 4, 2, 1))
+
+        # 4 → 1 (output)
+        self.conv6 = spectral_norm(nn.Conv2d(d * 8, 1, 4, 1, 0))
+
+    def forward(self, img, label):
+        x = torch.cat([img, label], 1)
+        x = F.leaky_relu(self.conv0(x), 0.2)   # 128x128
+        x = F.leaky_relu(self.conv1(x), 0.2)   # 64x64
+        x = F.leaky_relu(self.conv2(x), 0.2)   # 32x32
+        x = F.leaky_relu(self.conv3(x), 0.2)   # 16x16
+        x = F.leaky_relu(self.conv4(x), 0.2)   #  8x8
+        x = F.leaky_relu(self.conv5(x), 0.2)   #  4x4
+        return self.conv6(x)                    # [B, 1, 1, 1]
+
