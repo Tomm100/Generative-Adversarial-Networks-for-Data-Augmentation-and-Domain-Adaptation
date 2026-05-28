@@ -113,7 +113,7 @@ def main():
     random.shuffle(pool_normal_files) 
 
     # 5. Esecuzione Ablation Study
-    percentages = [0, 25, 50, 75, 100]
+    percentages = [25, 50, 75, 100]
     results_f1 = []
     
     ablation_base_dir = os.path.join(RESULTS_DIR, "ablation_datasets")
