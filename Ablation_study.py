@@ -5,13 +5,18 @@ import torch
 import matplotlib.pyplot as plt
 
 # ==============================================================================
-# CONFIGURAZIONE PATH (Da Modificare)
+# CONFIGURAZIONE PATH E MODELLO (Da Modificare)
 # ==============================================================================
-# Inserisci qui il path al file .pth del Generatore che vuoi testare
-DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints/G_epoch_220.pth"
+# 1. Inserisci il path al file .pth del Generatore che vuoi testare
+DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
 
-# Se stai usando la SNGAN, decommenta l'import corretto
-from models.sngan import SNGenerator as Generator
+# 2. Decommenta l'import corretto per il tuo esperimento
+# from models.wgan import Generator
+from models.sngan_128 import SNGenerator as Generator
+# from models.sngan import SNGenerator as Generator
+
+# 3. Inserisci il nome dell'esperimento per tracciarlo su WandB
+EXPERIMENT_NAME = "SNGAN_128_PG_BG"
 # ==============================================================================
 # IMPORT FUNZIONI PROGETTO
 # ==============================================================================
@@ -23,7 +28,7 @@ from utils.seed import set_seed
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
-    GAN_NZ, GAN_N_CLASS, GAN_NC, SEED, SNGAN_D
+    GAN_NZ, GAN_N_CLASS, GAN_NC, SEED
 )
 
 def main():
@@ -35,10 +40,10 @@ def main():
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name="Ablation_Study_SNGAN",
+        name=f"Ablation_Study_{EXPERIMENT_NAME}",
         config={
             "resnet_epochs": RESNET_EPOCHS,
-            "gan_type": "SNGAN",
+            "gan_type": EXPERIMENT_NAME,
             "percentages": [0, 25, 50, 75, 100]
         }
     )
@@ -66,8 +71,8 @@ def main():
         shutil.rmtree(pool_dir)
     
     print("\nCaricamento Generatore e creazione pool sintetico...")
-    # Inizializziamo il Generatore della SNGAN con i parametri centralizzati
-    G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=SNGAN_D).to(device)
+    # Inizializziamo il Generatore con i parametri centralizzati (d=128 è lo standard per 128px)
+    G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=128).to(device)
     G.load_state_dict(torch.load(DUMMY_GAN_WEIGHTS_PATH, map_location=device))
     
     # Generiamo il 100% delle immagini necessarie una sola volta
