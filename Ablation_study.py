@@ -5,13 +5,45 @@ import torch
 import matplotlib.pyplot as plt
 
 # ==============================================================================
-# CONFIGURAZIONE PATH (Da Modificare)
+# CONFIGURAZIONE GAN (Decommentare UNA sola configurazione alla volta)
 # ==============================================================================
-# Inserisci qui il path al file .pth del Generatore che vuoi testare
-DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints/G_epoch_220.pth"
-
-# Se stai usando la SNGAN, decommenta l'import corretto
+#
+# ── 1. WGAN-GP 128 con PatchGAN + BAGAN ──
+# from models.wgan import Generator
+# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_Pg_Bg_128/gan_checkpoints/G_epoch_XXX.pth"
+# WANDB_RUN_NAME = "Ablation_Study_WGAN_Pg_Bg_128"
+# GEN_D = 128  # GAN_D dalla config
+#
+# ── 2. WGAN-GP 128 senza PatchGAN e senza BAGAN ──
+# from models.wgan import Generator
+# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_noPg_noBg_128/gan_checkpoints/G_epoch_XXX.pth"
+# WANDB_RUN_NAME = "Ablation_Study_WGAN_noPg_noBg_128"
+# GEN_D = 128
+#
+# ── 3. SNGAN 128 con PatchGAN + BAGAN ──
+# from models.sngan_128 import SNGenerator as Generator
+# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_XXX.pth"
+# WANDB_RUN_NAME = "Ablation_Study_SNGAN_Pg_Bg_128"
+# GEN_D = 128  # SNGAN_D dalla config
+#
+# ── 4. SNGAN 128 senza PatchGAN e senza BAGAN ──
+# from models.sngan_128 import SNGenerator as Generator
+# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_128/sngan_checkpoints/G_epoch_XXX.pth"
+# WANDB_RUN_NAME = "Ablation_Study_SNGAN_noPg_noBg_128"
+# GEN_D = 128
+#
+# ── 5. SNGAN 256 con PatchGAN + BAGAN ──
+# from models.sngan import SNGenerator as Generator
+# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_256/sngan_checkpoints/G_epoch_XXX.pth"
+# WANDB_RUN_NAME = "Ablation_Study_SNGAN_Pg_Bg_256"
+# GEN_D = 128
+#
+# ── 6. SNGAN 256 senza PatchGAN e senza BAGAN ──
 from models.sngan import SNGenerator as Generator
+DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_256/sngan_checkpoints/G_epoch_XXX.pth"
+WANDB_RUN_NAME = "Ablation_Study_SNGAN_noPg_noBg_256"
+GEN_D = 128
+#
 # ==============================================================================
 # IMPORT FUNZIONI PROGETTO
 # ==============================================================================
@@ -23,7 +55,7 @@ from utils.seed import set_seed
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_EPOCHS, RESNET_LR,
-    GAN_NZ, GAN_N_CLASS, GAN_NC, SEED, SNGAN_D
+    GAN_NZ, GAN_N_CLASS, GAN_NC, SEED
 )
 
 def main():
@@ -35,7 +67,7 @@ def main():
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name="Ablation_Study_SNGAN",
+        name=WANDB_RUN_NAME,
         config={
             "resnet_epochs": RESNET_EPOCHS,
             "gan_type": "SNGAN",
@@ -67,7 +99,7 @@ def main():
     
     print("\nCaricamento Generatore e creazione pool sintetico...")
     # Inizializziamo il Generatore della SNGAN con i parametri centralizzati
-    G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=SNGAN_D).to(device)
+    G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GEN_D).to(device)
     G.load_state_dict(torch.load(DUMMY_GAN_WEIGHTS_PATH, map_location=device))
     
     # Generiamo il 100% delle immagini necessarie una sola volta
