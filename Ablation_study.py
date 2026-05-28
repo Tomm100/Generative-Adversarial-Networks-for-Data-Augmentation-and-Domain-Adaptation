@@ -71,7 +71,7 @@ def main():
         config={
             "resnet_epochs": RESNET_EPOCHS,
             "gan_type": WANDB_RUN_NAME,
-            "percentages": [0, 25, 50, 75, 100]
+            "percentages": [25, 50, 75, 100]
         }
     )
     
