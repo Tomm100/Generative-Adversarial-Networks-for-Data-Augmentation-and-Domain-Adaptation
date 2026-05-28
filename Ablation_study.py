@@ -70,7 +70,7 @@ def main():
         name=WANDB_RUN_NAME,
         config={
             "resnet_epochs": RESNET_EPOCHS,
-            "gan_type": "SNGAN",
+            "gan_type": EXPERIMENT_NAME,
             "percentages": [0, 25, 50, 75, 100]
         }
     )
