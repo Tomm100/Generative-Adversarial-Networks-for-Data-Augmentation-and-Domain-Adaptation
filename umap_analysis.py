@@ -21,7 +21,8 @@ from config import (
 # CONFIGURAZIONI UMAP E MODELLI
 # ==============================================================================
 # AGGIORNA CON I TUOI PATH REALI
-RESNET_WEIGHTS_PATH = "/content/drive/Mydrive/ProgettoMLVM/results_SNGAN_pg_bg_128/ResnetCheckpoint/best_model_Ablation_75pct.pth"
+RESNET_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/ResnetCheckpoint/best_model_Ablation_75pct.pth"
+
 GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
 
 GEN_D = 128
