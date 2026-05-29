@@ -21,10 +21,10 @@ import matplotlib.pyplot as plt
 # GEN_D = 128
 #
 # ── 3. SNGAN 128 con PatchGAN + BAGAN ──
-# from models.sngan_128 import SNGenerator as Generator
-# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_XXX.pth"
-# WANDB_RUN_NAME = "Ablation_Study_SNGAN_Pg_Bg_128"
-# GEN_D = 128  # SNGAN_D dalla config
+from models.sngan_128 import SNGenerator as Generator
+DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_XXX.pth"
+WANDB_RUN_NAME = "Ablation_Study_SNGAN_Pg_Bg_128"
+GEN_D = 128  # SNGAN_D dalla config
 #
 # ── 4. SNGAN 128 senza PatchGAN e senza BAGAN ──
 # from models.sngan_128 import SNGenerator as Generator
@@ -39,10 +39,10 @@ import matplotlib.pyplot as plt
 # GEN_D = 128
 #
 # ── 6. SNGAN 256 senza PatchGAN e senza BAGAN ──
-from models.sngan import SNGenerator as Generator
-DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_256/sngan_checkpoints/G_epoch_XXX.pth"
-WANDB_RUN_NAME = "Ablation_Study_SNGAN_noPg_noBg_256"
-GEN_D = 128
+# from models.sngan import SNGenerator as Generator
+# DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_256/sngan_checkpoints/G_epoch_XXX.pth"
+# WANDB_RUN_NAME = "Ablation_Study_SNGAN_noPg_noBg_256"
+# GEN_D = 128
 #
 # ==============================================================================
 # IMPORT FUNZIONI PROGETTO
