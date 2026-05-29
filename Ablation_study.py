@@ -21,7 +21,8 @@ import matplotlib.pyplot as plt
 # GEN_D = 128
 #
 # ── 3. SNGAN 128 con PatchGAN + BAGAN ──
-from models.sngan_128 import SNGenerator as Generator
+# NOTA: i checkpoint PG+BG 128 sono stati addestrati con l'architettura di wgan.py Generator
+from models.wgan import Generator
 DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_XXX.pth"
 WANDB_RUN_NAME = "Ablation_Study_SNGAN_Pg_Bg_128"
 GEN_D = 128  # SNGAN_D dalla config

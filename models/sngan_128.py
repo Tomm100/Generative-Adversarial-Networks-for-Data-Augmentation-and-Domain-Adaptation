@@ -36,8 +36,7 @@ class SNGenerator(nn.Module):
 
     Flow: z(1x1) + label(1x1) → 4 → 8 → 16 → 32 → 64 → 128
 
-    Architettura identica a wgan.py Generator con d=128 default.
-    Compatibile con tutti i checkpoint SNGAN 128px addestrati.
+    Canali: d*8 → d*8 → d*4 → d*2 → d → nc
 
     Args:
         nz:      dimensione dello spazio latente
@@ -48,41 +47,41 @@ class SNGenerator(nn.Module):
     def __init__(self, nz=100, n_class=2, nc=1, d=128):
         super().__init__()
         # 1x1 -> 4x4 (proiezione latente)
-        self.deconv1 = nn.ConvTranspose2d(nz + n_class, d*8, 4, 1, 0)
-        self.deconv1_bn = nn.BatchNorm2d(d*8)
+        self.deconv1 = nn.ConvTranspose2d(nz + n_class, d * 8, 4, 1, 0)
+        self.deconv1_bn = nn.BatchNorm2d(d * 8)
 
-        # 4x4 -> 8x8
-        self.up2 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.conv2 = nn.Conv2d(d*8, d*4, 3, 1, 1)
-        self.conv2_bn = nn.BatchNorm2d(d*4)
+        # 4x4 -> 8x8 (mantiene d*8)
+        self.up2  = nn.Upsample(scale_factor=2, mode='nearest')
+        self.conv2 = nn.Conv2d(d * 8, d * 8, 3, 1, 1)
+        self.bn2   = nn.BatchNorm2d(d * 8)
 
         # 8x8 -> 16x16
-        self.up3 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.conv3 = nn.Conv2d(d*4, d*2, 3, 1, 1)
-        self.conv3_bn = nn.BatchNorm2d(d*2)
+        self.up3  = nn.Upsample(scale_factor=2, mode='nearest')
+        self.conv3 = nn.Conv2d(d * 8, d * 4, 3, 1, 1)
+        self.bn3   = nn.BatchNorm2d(d * 4)
 
         # 16x16 -> 32x32
-        self.up4 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.conv4 = nn.Conv2d(d*2, d, 3, 1, 1)
-        self.conv4_bn = nn.BatchNorm2d(d)
+        self.up4  = nn.Upsample(scale_factor=2, mode='nearest')
+        self.conv4 = nn.Conv2d(d * 4, d * 2, 3, 1, 1)
+        self.bn4   = nn.BatchNorm2d(d * 2)
 
         # 32x32 -> 64x64
-        self.up5 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.conv5 = nn.Conv2d(d, d//2, 3, 1, 1)
-        self.conv5_bn = nn.BatchNorm2d(d//2)
+        self.up5  = nn.Upsample(scale_factor=2, mode='nearest')
+        self.conv5 = nn.Conv2d(d * 2, d, 3, 1, 1)
+        self.bn5   = nn.BatchNorm2d(d)
 
         # 64x64 -> 128x128
-        self.up6 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.conv6 = nn.Conv2d(d//2, nc, 3, 1, 1)
+        self.up6  = nn.Upsample(scale_factor=2, mode='nearest')
+        self.conv6 = nn.Conv2d(d, nc, 3, 1, 1)
 
     def forward(self, z, label):
         x = torch.cat([z, label], 1)
-        x = F.relu(self.deconv1_bn(self.deconv1(x)))          # [B, d*8,  4,  4]
-        x = F.relu(self.conv2_bn(self.conv2(self.up2(x))))    # [B, d*4,  8,  8]
-        x = F.relu(self.conv3_bn(self.conv3(self.up3(x))))    # [B, d*2, 16, 16]
-        x = F.relu(self.conv4_bn(self.conv4(self.up4(x))))    # [B, d,   32, 32]
-        x = F.relu(self.conv5_bn(self.conv5(self.up5(x))))    # [B, d//2,64, 64]
-        return torch.tanh(self.conv6(self.up6(x)))             # [B, nc, 128,128]
+        x = F.relu(self.deconv1_bn(self.deconv1(x)))       # [B, d*8,  4,  4]
+        x = F.relu(self.bn2(self.conv2(self.up2(x))))       # [B, d*8,  8,  8]
+        x = F.relu(self.bn3(self.conv3(self.up3(x))))       # [B, d*4, 16, 16]
+        x = F.relu(self.bn4(self.conv4(self.up4(x))))       # [B, d*2, 32, 32]
+        x = F.relu(self.bn5(self.conv5(self.up5(x))))       # [B, d,   64, 64]
+        return torch.tanh(self.conv6(self.up6(x)))           # [B, nc, 128,128]
 
 
 class SNCritic(nn.Module):

@@ -12,7 +12,12 @@ from config import (
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESULTS_DIR
 )
 from dataset.loader import setup_dataset
-from models.sngan_128 import SNGenerator as Generator
+# ── SNGAN 128 PG+BG (checkpoint addestrati con architettura wgan.py) ──
+from models.wgan import Generator
+# ── SNGAN 128 NoPG+NoBG ──
+# from models.sngan_128 import SNGenerator as Generator
+# ── SNGAN 256 ──
+# from models.sngan import SNGenerator as Generator
 
 from eval import generate_synthetic_images
 from utils.seed import set_seed
