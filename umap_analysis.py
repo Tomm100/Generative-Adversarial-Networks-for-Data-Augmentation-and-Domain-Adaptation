@@ -7,6 +7,8 @@ import seaborn as sns
 import umap
 import numpy as np
 import wandb
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 from models.resnet import ResNetClassifier
 from models.wgan import Generator
@@ -180,14 +182,24 @@ def main():
     
     target_names = ['Real Normal', 'Real Pneumonia', 'Fake Normal']
     
-    # --- 4. PROIEZIONE UMAP ---
-    print("\n[5/5] Esecuzione UMAP (riduzione da 512D a 2D)...")
+    # --- 4. RIDUZIONE DIMENSIONALITA' ---
+    print("\n[5/5] Esecuzione PCA, t-SNE e UMAP (riduzione da 512D a 2D)...")
+    
+    print("  -> Calcolo PCA...")
+    pca = PCA(n_components=2, random_state=SEED)
+    X_pca = pca.fit_transform(X)
+    
+    print("  -> Calcolo t-SNE...")
+    tsne = TSNE(n_components=2, random_state=SEED, n_jobs=-1)
+    X_tsne = tsne.fit_transform(X)
+    
+    print("  -> Calcolo UMAP...")
     reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, metric='cosine', random_state=SEED)
     X_umap = reducer.fit_transform(X)
     
     # --- 5. VISUALIZZAZIONE ---
-    print("Creazione scatter plot...")
-    plt.figure(figsize=(12, 9))
+    print("Creazione scatter plot combinato...")
+    fig, axes = plt.subplots(1, 3, figsize=(24, 7))
     
     # Palette e z-order (mettiamo le Fake Normal con zorder più alto per farle risaltare sopra le altre)
     colors = ['#1f77b4', '#d62728', '#2ca02c']  # Blu, Rosso, Verde acceso
@@ -195,24 +207,31 @@ def main():
     alphas = [0.5, 0.4, 0.9]
     zorders = [1, 1, 3] 
     
-    for i, name in enumerate(target_names):
-        idx = (y == i)
-        plt.scatter(
-            X_umap[idx, 0], X_umap[idx, 1], 
-            label=name, color=colors[i], marker=markers[i], 
-            alpha=alphas[i], edgecolors='white' if i==2 else 'none', 
-            s=60 if i==2 else 40, zorder=zorders[i]
-        )
-        
-    plt.title("UMAP Projection of ResNet-18 Features (Train Manifold)", fontsize=16, fontweight='bold')
-    plt.xlabel("UMAP Dimension 1", fontsize=12)
-    plt.ylabel("UMAP Dimension 2", fontsize=12)
-    plt.legend(title="Data Type", fontsize=11, title_fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.3)
+    reductions = [
+        ("PCA", X_pca, axes[0]),
+        ("t-SNE", X_tsne, axes[1]),
+        ("UMAP", X_umap, axes[2])
+    ]
     
-    out_dir = os.path.join(RESULTS_DIR, "umap_analysis")
+    for title, X_red, ax in reductions:
+        for i, name in enumerate(target_names):
+            idx = (y == i)
+            ax.scatter(
+                X_red[idx, 0], X_red[idx, 1], 
+                label=name, color=colors[i], marker=markers[i], 
+                alpha=alphas[i], edgecolors='white' if i==2 else 'none', 
+                s=60 if i==2 else 40, zorder=zorders[i]
+            )
+        ax.set_title(f"{title} Projection of ResNet-18 Features", fontsize=16, fontweight='bold')
+        ax.set_xlabel(f"{title} Dimension 1", fontsize=12)
+        ax.set_ylabel(f"{title} Dimension 2", fontsize=12)
+        ax.grid(True, linestyle='--', alpha=0.3)
+        if title == "UMAP":
+            ax.legend(title="Data Type", fontsize=11, title_fontsize=12)
+    
+    out_dir = os.path.join(RESULTS_DIR, "feature_analysis")
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, "umap_resnet_features.png")
+    out_path = os.path.join(out_dir, "pca_tsne_umap_resnet_features.png")
     
     plt.tight_layout()
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
@@ -220,7 +239,7 @@ def main():
     
     # --- 6. LOG WANDB ---
     wandb.log({
-        "UMAP/Train_Manifold_Projection": wandb.Image(out_path, caption="UMAP Projection")
+        "Feature_Analysis/Train_Manifold_Projections": wandb.Image(out_path, caption="PCA, t-SNE, UMAP Projections")
     })
     wandb.finish()
 
