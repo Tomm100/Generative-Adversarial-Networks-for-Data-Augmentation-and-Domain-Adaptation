@@ -166,13 +166,10 @@ def train_cdan_synth(
             domain_loss_fake = criterion_domain(domain_out_fake, d_fake)  # (B, 1)
 
             if use_entropy:
-                # Pesa la domain loss per entropia delle predizioni
-                # Campioni con predizione incerta (alta H) → peso basso
-                from models.cdan_synth import CDANSynth
-                w_real = CDANSynth.compute_entropy_weight(softmax_real.detach())
-                w_fake = CDANSynth.compute_entropy_weight(softmax_fake.detach())
-                loss_domain = (w_real * domain_loss_real).mean() + \
-                              (w_fake * domain_loss_fake).mean()
+                # L'Entropy Conditioning si applica SOLO al dominio sintetico (Target).
+                # Il dominio reale (Source) ha etichette certe, la sua domain loss pesa sempre 1.0.
+                w_fake = type(model).compute_entropy_weight(softmax_fake.detach())
+                loss_domain = domain_loss_real.mean() + (w_fake * domain_loss_fake).mean()
             else:
                 loss_domain = domain_loss_real.mean() + domain_loss_fake.mean()
 
