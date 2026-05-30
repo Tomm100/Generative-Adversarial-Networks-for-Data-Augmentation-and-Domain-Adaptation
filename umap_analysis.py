@@ -12,6 +12,7 @@ from sklearn.manifold import TSNE
 
 from models.resnet import ResNetClassifier
 from models.dann_synth import DANNSynth
+from models.cdan_synth import CDANSynth
 from models.wgan import Generator
 from dataset.loader import setup_dataset, get_dataloaders
 from utils.seed import set_seed
@@ -27,13 +28,17 @@ from config import (
 # ── Selezione Feature Extractor ──────────────────────────────────────────────
 # "resnet" = usa ResNetClassifier (backbone.fc → Identity)
 # "dann"   = usa DANNSynth (feature_extractor → flatten)
-USE_EXTRACTOR = "dann"  # <--- CAMBIA QUI: "resnet" oppure "dann"
+# "cdan"   = usa CDANSynth (feature_extractor → flatten)
+USE_EXTRACTOR = "cdan"  # <--- CAMBIA QUI: "resnet", "dann" oppure "cdan"
 
 # Path pesi ResNet (usato solo se USE_EXTRACTOR = "resnet")
 RESNET_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/ResnetCheckpoint/best_model_Ablation_75pct.pth"
 
 # Path pesi DANN (usato solo se USE_EXTRACTOR = "dann")
 DANN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/DomainAdaptation/dann_synth_checkpoints/best_DANN_Synth.pth"
+
+# Path pesi CDAN (usato solo se USE_EXTRACTOR = "cdan")
+CDAN_WEIGHTS_PATH = "./results/cdan_synth_checkpoints/best_CDAN_Synth.pth"
 
 # Path pesi GAN (per generare le sintetiche on-the-fly)
 GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
@@ -86,6 +91,27 @@ class DANNFeatureExtractor(nn.Module):
         return feats.view(feats.size(0), -1)     # (B, 512)
 
 
+class CDANFeatureExtractor(nn.Module):
+    """Wrapper: carica CDANSynth e usa solo il feature_extractor."""
+
+    def __init__(self, weights_path, device):
+        super().__init__()
+        # Inizializziamo con use_entropy=True di default per compatibilità
+        model = CDANSynth(num_classes=2, pretrained=True, use_entropy=True)
+
+        if os.path.exists(weights_path):
+            model.load_state_dict(torch.load(weights_path, map_location=device))
+            print(f"  ✅ Pesi CDAN caricati da: {weights_path}")
+        else:
+            print(f"  ⚠️ Pesi CDAN non trovati. Uso pesi ImageNet (baseline).")
+
+        self.feature_extractor = model.feature_extractor
+
+    def forward(self, x):
+        feats = self.feature_extractor(x)       # (B, 512, 1, 1)
+        return feats.view(feats.size(0), -1)     # (B, 512)
+
+
 def load_feature_extractor(device):
     """Carica il feature extractor selezionato tramite USE_EXTRACTOR."""
     print(f"\n[1/5] Caricamento Feature Extractor: {USE_EXTRACTOR.upper()}")
@@ -94,8 +120,10 @@ def load_feature_extractor(device):
         extractor = ResNetFeatureExtractor(RESNET_WEIGHTS_PATH, device)
     elif USE_EXTRACTOR == "dann":
         extractor = DANNFeatureExtractor(DANN_WEIGHTS_PATH, device)
+    elif USE_EXTRACTOR == "cdan":
+        extractor = CDANFeatureExtractor(CDAN_WEIGHTS_PATH, device)
     else:
-        raise ValueError(f"USE_EXTRACTOR non valido: '{USE_EXTRACTOR}'. Usa 'resnet' o 'dann'.")
+        raise ValueError(f"USE_EXTRACTOR non valido: '{USE_EXTRACTOR}'. Usa 'resnet', 'dann' o 'cdan'.")
 
     extractor = extractor.to(device)
     extractor.eval()
@@ -196,6 +224,7 @@ def main():
             "num_samples_per_class": NUM_SAMPLES_PER_CLASS,
             "resnet_weights":       RESNET_WEIGHTS_PATH if USE_EXTRACTOR == "resnet" else None,
             "dann_weights":         DANN_WEIGHTS_PATH if USE_EXTRACTOR == "dann" else None,
+            "cdan_weights":         CDAN_WEIGHTS_PATH if USE_EXTRACTOR == "cdan" else None,
             "gan_weights":          GAN_WEIGHTS_PATH,
         }
     )
