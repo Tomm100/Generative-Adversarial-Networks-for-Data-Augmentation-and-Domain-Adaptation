@@ -76,18 +76,31 @@ class DANNSynth(nn.Module):
         super().__init__()
 
         # Feature Extractor: ResNet-18 backbone fino ad avgpool
+        # Allineato a ResNetClassifier: conv1, bn1, layer1, layer2 CONGELATI
+        #                               layer3, layer4 SBLOCCATI
         backbone = models.resnet18(
             weights=models.ResNet18_Weights.DEFAULT if pretrained else None
         )
+
+        # 1. Congela tutti i parametri del backbone
+        for param in backbone.parameters():
+            param.requires_grad = False
+
+        # 2. Sblocca layer3 e layer4 (come in ResNetClassifier)
+        for param in backbone.layer3.parameters():
+            param.requires_grad = True
+        for param in backbone.layer4.parameters():
+            param.requires_grad = True
+
         self.feature_extractor = nn.Sequential(
-            backbone.conv1,
-            backbone.bn1,
+            backbone.conv1,       # FROZEN
+            backbone.bn1,         # FROZEN
             backbone.relu,
             backbone.maxpool,
-            backbone.layer1,
-            backbone.layer2,
-            backbone.layer3,
-            backbone.layer4,
+            backbone.layer1,      # FROZEN
+            backbone.layer2,      # FROZEN
+            backbone.layer3,      # TRAINABLE
+            backbone.layer4,      # TRAINABLE
             backbone.avgpool,     # output: (B, 512, 1, 1)
         )
 

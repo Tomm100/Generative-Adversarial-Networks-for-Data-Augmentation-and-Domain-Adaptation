@@ -73,12 +73,13 @@ def train_dann_synth(
     model = model.to(device)
 
     # Optimizer con LR differenziati:
-    # Feature extractor (pretrained) → LR basso per non distruggere i pesi
+    # Feature extractor (solo layer3+layer4 sbloccati) → LR basso per non distruggere i pesi
     # Classificatori (task + domain) → LR alto per convergenza rapida
+    feat_params = [p for p in model.feature_extractor.parameters() if p.requires_grad]
     optimizer = optim.Adam([
-        {'params': model.feature_extractor.parameters(),   'lr': lr_feature},
-        {'params': model.label_predictor.parameters(),     'lr': lr_classifier},
-        {'params': model.domain_discriminator.parameters(),'lr': lr_classifier},
+        {'params': feat_params,                                'lr': lr_feature},
+        {'params': model.label_predictor.parameters(),         'lr': lr_classifier},
+        {'params': model.domain_discriminator.parameters(),    'lr': lr_classifier},
     ], betas=(beta1, 0.999))
 
     criterion_class  = nn.CrossEntropyLoss()     # task: NORMAL vs PNEUMONIA

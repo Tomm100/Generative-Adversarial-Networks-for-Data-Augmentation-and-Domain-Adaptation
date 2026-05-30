@@ -6,15 +6,13 @@ PCA/t-SNE. Il DANN forza il feature extractor a essere cieco alla differenza
 reale/sintetica, costringendo la rete a imparare solo la patologia.
 
 Pipeline:
-  STEP 0 — Generazione Immagini Sintetiche NORMAL (da GAN epoch 300)
-  STEP 1 — Baseline: ResNet standard (Phase 1 da main.py) sul Test Set reale
+  STEP 0 — Generazione Immagini Sintetiche NORMAL (da GAN)
+  STEP 1 — Setup DataLoader DANN Synth→Real
   STEP 2 — Training DANN (Synth→Real domain adaptation)
   STEP 3 — Valutazione DANN sul Test Set reale
-  STEP 4 — Confronto PRE vs POST DANN
 
 Prerequisiti:
-  - main.py già eseguito (checkpoint ResNet Phase 1 disponibile)
-  - GAN checkpoint disponibile in results/gan_checkpoints/
+  - GAN checkpoint disponibile nel path specificato
   - Dataset in ./data/modified_dataset/
 
 Utilizzo:
@@ -36,21 +34,64 @@ from config import (
 from dataset.loader import setup_dataset, get_dataloaders
 from dataset.synth_real_loader import get_synth_dann_loaders
 from models.dann_synth import DANNSynth
-from models.resnet import ResNetClassifier
-from models.wgan import Generator
-from train_dann_synth import train_dann_synth, evaluate_dann_synth
 from eval import evaluate_on_test, generate_synthetic_images
+from train_dann_synth import train_dann_synth, evaluate_dann_synth
 from utils.seed import set_seed
 
 # ==============================================================================
-# ⚙️ CONFIGURAZIONE
+# ⚙️ CONFIGURAZIONE GAN (Decommentare UNA sola configurazione alla volta)
 # ==============================================================================
+#
+# ── 1. WGAN-GP 128 con PatchGAN + BAGAN ──
+# from models.wgan import Generator
+# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_Pg_Bg_128/gan_checkpoints/G_epoch_XXX.pth"
+# GEN_D = 128
+#
+# ── 2. WGAN-GP 128 senza PatchGAN e senza BAGAN ──
+# from models.wgan import Generator
+# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_noPg_noBg_128/gan_checkpoints/G_epoch_XXX.pth"
+# GEN_D = 128
+#
+# ── 3. SNGAN 128 con PatchGAN + BAGAN ──
+# NOTA: i checkpoint PG+BG 128 sono stati addestrati con l'architettura di wgan.py Generator
+from models.wgan import Generator
+GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_XXX.pth"
+GEN_D = 128
+#
+# ── 4. SNGAN 128 senza PatchGAN e senza BAGAN ──
+# from models.sngan_128 import SNGenerator as Generator
+# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_128/sngan_checkpoints/G_epoch_XXX.pth"
+# GEN_D = 128
+#
+# ── 5. SNGAN 256 con PatchGAN + BAGAN ──
+# from models.sngan import SNGenerator as Generator
+# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_256/sngan_checkpoints/G_epoch_XXX.pth"
+# GEN_D = 128
+#
+# ── 6. SNGAN 256 senza PatchGAN e senza BAGAN ──
+# from models.sngan import SNGenerator as Generator
+# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_256/sngan_checkpoints/G_epoch_XXX.pth"
+# GEN_D = 128
+#
+# ==============================================================================
+# ⚙️ CONFIGURAZIONE GENERALE
+# ==============================================================================
+
 # Epoch della GAN da usare per generare le immagini sintetiche
+# (sostituire XXX nel path sopra, oppure modificare questo valore se il path
+#  viene costruito dinamicamente — vedi STEP 0)
 GAN_EPOCH_TO_USE = 220
 
-# Quante immagini NORMAL sintetiche generare (bilanciare col train reale)
+# Percentuale del gap NORMAL/PNEUMONIA da colmare con le sintetiche.
+# Es: 100 = colma tutto il gap (bilanciamento completo)
+#      50 = colma metà del gap
+#      25 = aggiunge solo il 25% delle sintetiche necessarie
+SYNTH_GAP_PERCENT = 100  # valore in [0, 100]
+
+# Quante immagini NORMAL sintetiche generare (override manuale).
 # Metti 0 per ricalcolare automaticamente dal gap NORMAL/PNEUMONIA
-NUM_SYNTHETIC_NORMAL = 0  # 0 = auto (verrà calcolato dal gap del training set)
+# secondo SYNTH_GAP_PERCENT.
+NUM_SYNTHETIC_NORMAL = 0  # 0 = auto
 
 # Configurazione DANN
 DANN_EPOCHS      = 50
@@ -80,25 +121,32 @@ def main():
         return
     train_dir, val_dir, test_dir = res
 
-    # Calcolo gap da colmare (se non specificato manualmente)
+    # Calcolo gap da colmare
     n_normal   = len(os.listdir(os.path.join(train_dir, 'NORMAL')))
     n_pneum    = len(os.listdir(os.path.join(train_dir, 'PNEUMONIA')))
-    num_synth  = NUM_SYNTHETIC_NORMAL if NUM_SYNTHETIC_NORMAL > 0 else (n_pneum - n_normal)
+    max_deficit = n_pneum - n_normal
+
+    if NUM_SYNTHETIC_NORMAL > 0:
+        num_synth = NUM_SYNTHETIC_NORMAL
+    else:
+        num_synth = int(max_deficit * (SYNTH_GAP_PERCENT / 100.0))
+
     print(f"\n  Train reale: {n_normal} NORMAL + {n_pneum} PNEUMONIA")
-    print(f"  Immagini sintetiche da generare: {num_synth} NORMAL")
+    print(f"  Gap totale: {max_deficit} immagini")
+    print(f"  Gap da colmare: {SYNTH_GAP_PERCENT}% → {num_synth} immagini sintetiche NORMAL")
 
     # ── STEP 0: Generazione Immagini Sintetiche ──────────────────────────────
-    gan_ckpt = os.path.join("/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/sngan_checkpoints/", f"G_epoch_{GAN_EPOCH_TO_USE}.pth")
+    gan_ckpt = GAN_WEIGHTS_PATH
     if not os.path.isfile(gan_ckpt):
         print(f"\n  ❌ Checkpoint GAN non trovato: {gan_ckpt}")
-        print(f"  Verifica che main.py sia già stato eseguito e il training completato.")
+        print(f"  Verifica il path e l'epoch configurati.")
         return
 
     syn_normal_dir = os.path.join(SYNTHETIC_DIR, 'NORMAL')
     # Genera solo se non già presenti (per evitare di rigenerare ad ogni run)
     if not os.path.exists(syn_normal_dir) or len(os.listdir(syn_normal_dir)) < num_synth:
         print(f"\n  [STEP 0] Generazione {num_synth} immagini sintetiche NORMAL...")
-        G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GAN_D).to(device)
+        G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GEN_D).to(device)
         G.load_state_dict(torch.load(gan_ckpt, map_location=device))
         generate_synthetic_images(
             G, num_gen_normal=num_synth, num_gen_pneumonia=0,
@@ -114,11 +162,13 @@ def main():
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name=f"DANN_Synth_ep{GAN_EPOCH_TO_USE}",
+        name=f"DANN_Synth_ep{GAN_EPOCH_TO_USE}_gap{SYNTH_GAP_PERCENT}pct",
         config={
             "phase":            "DANN_Synth_Domain_Adaptation",
             "seed":             SEED,
             "gan_epoch":        GAN_EPOCH_TO_USE,
+            "gan_weights":      GAN_WEIGHTS_PATH,
+            "synth_gap_pct":    SYNTH_GAP_PERCENT,
             "num_synth":        num_synth,
             "dann_epochs":      DANN_EPOCHS,
             "dann_lr_feat":     DANN_LR_FEAT,
@@ -132,32 +182,9 @@ def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(METRICS_DIR, exist_ok=True)
 
-    # ── STEP 1: Baseline (ResNet Phase 1 su Test Set reale) ──────────────────
+    # ── STEP 1: DataLoader DANN ───────────────────────────────────────────────
     print(f"\n{'═'*60}")
-    print(f"  STEP 1: Baseline — ResNet Phase 1 sul Test Set reale")
-    print(f"{'═'*60}")
-
-    resnet_ckpt = os.path.join("/content/drive/MyDrive/ProgettoMLVM/results_SNGAN/checkpoints/", 'best_model_Phase1.pth')
-    if not os.path.isfile(resnet_ckpt):
-        print(f"\n  ❌ Checkpoint Phase 1 non trovato: {resnet_ckpt}")
-        print(f"  Esegui prima main.py per generarlo.")
-        return
-    else:
-        _, _, test_loader_base, class_names = get_dataloaders(
-            train_dir, val_dir, test_dir,
-            img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE
-        )
-        resnet_model = ResNetClassifier(num_classes=2)
-        report_baseline, cm_baseline = evaluate_on_test(
-            resnet_model, resnet_ckpt, test_loader_base, class_names, device,
-            tag="Baseline_Phase1", out_dir=METRICS_DIR
-        )
-        print(f"  Baseline NORMAL Recall: {report_baseline['NORMAL']['recall']:.4f}")
-        del resnet_model
-
-    # ── STEP 2: DataLoader DANN ───────────────────────────────────────────────
-    print(f"\n{'═'*60}")
-    print(f"  STEP 2: Setup DataLoader DANN Synth→Real")
+    print(f"  STEP 1: Setup DataLoader DANN Synth→Real")
     print(f"{'═'*60}")
 
     (source_loader, target_loader,
@@ -170,9 +197,9 @@ def main():
         batch_size=DANN_BATCH
     )
 
-    # ── STEP 3: Training DANN ─────────────────────────────────────────────────
+    # ── STEP 2: Training DANN ─────────────────────────────────────────────────
     print(f"\n{'═'*60}")
-    print(f"  STEP 3: Training DANN Synth→Real")
+    print(f"  STEP 2: Training DANN Synth→Real")
     print(f"{'═'*60}")
 
     model = DANNSynth(num_classes=2, pretrained=True)
@@ -192,9 +219,9 @@ def main():
         class_names=class_names
     )
 
-    # ── STEP 4: Valutazione DANN sul Test Set reale ───────────────────────────
+    # ── STEP 3: Valutazione DANN sul Test Set reale ───────────────────────────
     print(f"\n{'═'*60}")
-    print(f"  STEP 4: Valutazione DANN — Test Set REALE")
+    print(f"  STEP 3: Valutazione DANN — Test Set REALE")
     print(f"{'═'*60}")
 
     report_dann, cm_dann = evaluate_dann_synth(
@@ -207,25 +234,15 @@ def main():
         out_dir=METRICS_DIR
     )
 
-    # ── STEP 5: Confronto finale ──────────────────────────────────────────────
+    # ── Riepilogo finale ──────────────────────────────────────────────────────
     print(f"\n{'='*60}")
-    print(f"  CONFRONTO: Baseline vs DANN Synth→Real")
+    print(f"  RISULTATI DANN Synth→Real")
     print(f"{'='*60}")
-
-    if report_baseline is not None:
-        for cls in class_names:
-            for metric in ['precision', 'recall', 'f1-score']:
-                v_base = report_baseline[cls][metric]
-                v_dann = report_dann[cls][metric]
-                diff   = v_dann - v_base
-                arrow  = "↑" if diff > 0 else "↓"
-                print(f"  {cls} {metric:12s}: {v_base:.4f} → {v_dann:.4f}  ({arrow} {abs(diff):.4f})")
-
-        acc_b = report_baseline['accuracy']
-        acc_d = report_dann['accuracy']
-        print(f"\n  Overall Acc: {acc_b:.4f} → {acc_d:.4f}  "
-              f"({'↑' if acc_d > acc_b else '↓'} {abs(acc_d - acc_b):.4f})")
-    
+    for cls in class_names:
+        for metric in ['precision', 'recall', 'f1-score']:
+            v = report_dann[cls][metric]
+            print(f"  {cls} {metric:12s}: {v:.4f}")
+    print(f"\n  Overall Accuracy: {report_dann['accuracy']:.4f}")
     print(f"\n  💾 Checkpoint DANN: {ckpt_path}")
     print(f"  ✅ Pipeline DANN Synth→Real completata!")
 
