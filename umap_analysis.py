@@ -38,7 +38,7 @@ RESNET_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_1
 DANN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/DomainAdaptation/dann_synth_checkpoints/best_DANN_Synth.pth"
 
 # Path pesi CDAN (usato solo se USE_EXTRACTOR = "cdan")
-CDAN_WEIGHTS_PATH = "./results/cdan_synth_checkpoints/best_CDAN_Synth.pth"
+CDAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/DomainAdaptationCDAN/cdan_synth_checkpoints/best_CDAN_Synth.pth"
 
 # Path pesi GAN (per generare le sintetiche on-the-fly)
 GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
