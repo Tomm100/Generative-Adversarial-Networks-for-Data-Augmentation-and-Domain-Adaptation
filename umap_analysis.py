@@ -33,7 +33,7 @@ USE_EXTRACTOR = "dann"  # <--- CAMBIA QUI: "resnet" oppure "dann"
 RESNET_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/ResnetCheckpoint/best_model_Ablation_75pct.pth"
 
 # Path pesi DANN (usato solo se USE_EXTRACTOR = "dann")
-DANN_WEIGHTS_PATH = "./results/dann_synth_checkpoints/best_DANN_Synth.pth"
+DANN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/DomainAdaptation/dann_synth_checkpoints/best_DANN_Synth.pth"
 
 # Path pesi GAN (per generare le sintetiche on-the-fly)
 GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
