@@ -1,70 +1,177 @@
-### Dataset
+# Generative Adversarial Networks for Data Augmentation and Domain Adaptation
+
+## 1. Dataset
 
 - **Source**: [Chest X-Ray Images (Pneumonia)](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia)
-- **Content**: 5,863 chest X-ray images, organized into train, validation, and test splits
-- **Classes**: NORMAL (1,341 train) and PNEUMONIA (3,875 train) — naturally imbalanced (~1:3 ratio)
-- **Subset strategy**: 20% of train split is added to validation split, while the remaining 80% is used for training. Test split remains unchanged.
+- **Content**: 5.856 radiografie toraciche pediatriche in scala di grigi
+- **Classes**: NORMAL (classe minoritaria) e PNEUMONIA (classe maggioritaria)
 
-### Architecture
+### Distribuzione originale
 
-| Component | Architecture | Details |
+| Classe | Train | Validation | Test | Totale |
+|---|---|---|---|---|
+| NORMAL | 1.341 | 8 | 234 | 1.583 |
+| PNEUMONIA | 3.875 | 8 | 390 | 4.273 |
+| **Totale** | 5.216 | 16 | 624 | 5.856 |
+
+La suddivisione originale presenta un validation set di sole 16 immagini (8 per classe), statisticamente insufficiente per una model selection affidabile.
+
+### Distribuzione ripartizionata (adottata nel progetto)
+
+Per ovviare a questa limitazione, una porzione del training set originale viene trasferita al validation set tramite campionamento stratificato, preservando il rapporto tra le classi. Il test set rimane invariato.
+
+| Classe | Train | Validation | Test | Totale |
+|---|---|---|---|---|
+| NORMAL | 1.145 | 205 | 234 | 1.584 |
+| PNEUMONIA | 3.502 | 380 | 390 | 4.272 |
+| **Totale** | 4.647 | 585 | 624 | 5.856 |
+| *Percentuale* | 79,35% | 9,99% | 10,66% | 100% |
+
+Lo sbilanciamento risultante nel training set è di circa **1:3** (NORMAL:PNEUMONIA), con un gap di **2.357 immagini** da colmare per la classe minoritaria.
+
+---
+
+## 2. Architettura del Classificatore
+
+| Componente | Architettura | Dettagli |
 |---|---|---|
-| **Classifier** | ResNet-18 (pre-trained on ImageNet) | Final fully-connected layer replaced with a binary classification head |
-| **GAN** | WGAN-GP | Conditional on class label; 5 transposed conv layers; outputs 64×64 grayscale images |
+| **Classificatore** | ResNet-18 (pre-trained su ImageNet) | Fine-tuning parziale: solo `layer3`, `layer4` e il layer fully-connected finale (sostituito con un classificatore binario) vengono scongelati. I layer inferiori preservano le feature generiche a basso livello apprese su ImageNet. |
 
-### Training Setup
+Le immagini, nativamente in scala di grigi, vengono caricate in formato RGB (3 canali) duplicando il canale di luminanza per garantire la compatibilità con il backbone pre-addestrato.
 
-#### Phase 1 — Classifier Baseline
-- **Method**: Fine-tuning of the pre-trained ResNet-18
+---
 
-#### Phase 2 — GAN Training
-- **Method**: Training WGAN-GP on the train split
+## 3. Modelli Generativi
 
-#### Phase 3 — Classifier with Augmented Data
-- **Method**: Fine-tuning of the pre-trained ResNet-18 on the train split with augmented data
+Vengono implementate e confrontate **due architetture GAN condizionali** complementari:
 
-### Evaluation Metrics
+### 3.1 Conditional Deep Convolutional WGAN-GP (cDC-WGAN-GP)
 
-| Metric |
-|---|
-| **Accuracy** |
-| **Precision** |
-| **Recall** |
-| **F1-Score** |
+| Proprietà | Valore |
+|---|---|
+| **Risoluzione** | 128×128 grayscale |
+| **Stabilizzazione** | Wasserstein Loss + Gradient Penalty (λ=10) |
+| **Critic** | Instance Normalization (no Batch Norm per preservare la GP) + Epsilon Drift Penalty |
+| **n_critic** | 5 (5 aggiornamenti Critic per ogni aggiornamento Generator) |
 
-A **Confusion Matrix** will also be used as a diagnostic tool to provide a detailed breakdown of classification errors per class.
+### 3.2 Conditional Deep Convolutional SNGAN (cDC-SNGAN)
 
+| Proprietà | Valore |
+|---|---|
+| **Risoluzioni testate** | 128×128 e 256×256 grayscale |
+| **Stabilizzazione** | Spectral Normalization su tutti i layer del Critic |
+| **Loss** | Hinge Loss |
+| **n_critic** | 1 (un solo aggiornamento Critic per step, reso possibile dalla Spectral Norm) |
 
-Certo, va benissimo anche via mail. Le allego dunque quali sono i miei dubbi a riguardo
+### 3.3 Tecniche Comuni a Entrambe le Architetture
 
-1) Posso utilizzare come classificatore una ResNet18 pre-addestrata su ImageNet?
+#### PatchGAN Discriminator
+Il discriminatore produce una griglia spaziale 16×16 anziché un singolo scalare. Ogni cella valuta l'autenticità di un patch locale dell'immagine, forzando il Generatore a riprodurre texture biologiche ad alta frequenza (strutture costali, opacità polmonari, profilo diaframmatico) in ogni regione della radiografia.
 
-Per quanto riguarda la validazione durante il training, quale metrica mi conviene guardare oltre alla loss per scegliere l'epoca migliore? 
+#### Strategia di Bilanciamento Generativo (simil-BAGAN)
+Il Generatore viene forzato a produrre batch perfettamente bilanciati tra le classi (50% NORMAL, 50% PNEUMONIA), mentre il Critic viene addestrato sulla distribuzione reale sbilanciata del dataset. Questa asimmetria impedisce al Generatore di collassare sulla classe maggioritaria.
 
-2) Ho scelto il dataset chest x-ray pneumonia (https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia). Questo è composto nel seguente modo:
-- train: 5216 immagini (3875 PNEUMONIA, 1341 NORMAL)
-- val: 16 immagini (8 PNEUMONIA, 8 NORMAL)
-- test: 624 immagini (390 PNEUMONIA, 234 NORMAL)
+---
 
-Lo split di validazione è sufficiente? Oppure devo splittare da una parte del train per creare un validation set più grande? e in tal caso, questo split non deve essere usato per addestrare la GAN, corretto?
+## 4. Pipeline Sperimentale
 
-Nella traccia viene specificato che il dataset dev'essere ridotto/sbilanciato. Questo è leggermente sbilanciato, ma non so se sia sufficiente. Inoltre è corretto che la classe negativa(Normal) sia quella minoritaria?
+### Phase 1 — Baseline ResNet-18
+Addestramento del classificatore sul dataset reale sbilanciato, per stabilire un benchmark di riferimento.
 
-3) Per quanto riguarda la GAN, ho pensato di utilizzare una WGAN-GP con le seguenti caratteristiche:
-- Conditional on class label
-- 6 conv layers
-- Outputs 128x128 grayscale images
+### Phase 2 — Training GAN
+Addestramento della GAN condizionale (WGAN-GP o SNGAN) sul training set reale per generare immagini sintetiche della classe minoritaria (NORMAL).
 
-È una buona scelta? Oppure mi consiglia di utilizzare un'altra architettura?
+### Phase 3 — Classificatore su Dataset Augmented
+Re-addestramento del classificatore sul dataset arricchito con campioni sintetici. Lo **studio di ablazione** varia la percentuale di immagini sintetiche inserite (25%, 50%, 75%, 100%) per individuare il rapporto ottimale reale/sintetico.
 
-Per valutare la qualità delle immagini prodotte dal GAN, pensavo di addestrare il classificatore sulle immagini sintetiche del gan ed utilizzare il test set composto da immagini reali. È una strategia corretta o mi consiglia altre metriche per valuare le immagini del gan?
+### Phase 4 — Analisi del Domain Shift
+Estrazione delle feature a 512 dimensioni dal penultimo layer della ResNet-18 e proiezione in uno spazio bidimensionale tramite **PCA**, **t-SNE** e **UMAP** per visualizzare e quantificare il domain gap tra campioni reali e sintetici.
 
-Nel caso in cui l'augmentation non porti a miglioramenti significativi, ha senso testare su quale percentuale del dataset (es prendendo solo il 20-30% del dataset originale) si ottengono miglioramenti? (la gan però sarebbe sempre addestrata su tutto il dataset, in quanto il 20-30% del dataset originale non sarebbe sufficiente per addestrarla)
+### Phase 5 — Domain Adaptation via DANN
+Addestramento di una Domain-Adversarial Neural Network (DANN) per allineare le distribuzioni latenti reale e sintetica tramite un Gradient Reversal Layer (GRL), rendendo il classificatore invariante rispetto al dominio di provenienza.
 
-Mi scuso in anticipo se mi sono dilungato troppo e le auguro una buona serata.
+---
 
+## 5. Studio di Ablazione
 
+L'ablation study è strutturato su **due dimensioni ortogonali**:
 
+### 5.1 Ablazione sull'architettura GAN
+Per ciascuna delle tre configurazioni (WGAN 128, SNGAN 128, SNGAN 256), vengono confrontate due varianti:
+- **NO PG BG**: Discriminatore standard DCGAN (output scalare 1×1) + distribuzione reale sbilanciata per il Generator
+- **SI PG BG**: Discriminatore PatchGAN (output 16×16) + bilanciamento simil-BAGAN (50/50)
 
+Totale: **6 configurazioni** GAN.
 
+### 5.2 Ablazione sulla percentuale di augmentation
+Per ciascuna delle 6 configurazioni, il classificatore viene ri-addestrato con il 25%, 50%, 75% e 100% del gap colmato da immagini sintetiche.
 
+### 5.3 Confronto con Baseline tradizionali
+I risultati GAN vengono confrontati con:
+- **Baseline** (solo dati reali, nessun bilanciamento)
+- **Class Weighting** (pesi inversi nella loss function)
+- **Random Oversampling** (duplicazione dei campioni minoritari)
+
+---
+
+## 6. Metriche di Valutazione
+
+### Classificazione (downstream)
+
+| Metrica | Motivazione |
+|---|---|
+| **Macro F1-Score** | Metrica primaria: media armonica non pesata tra Precision e Recall per ogni classe, impedisce al modello di ignorare la classe minoritaria |
+| **Accuracy** | Metrica complementare per il confronto generale |
+| **Precision per classe** | Misura la purezza delle predizioni per classe |
+| **Recall per classe** | Misura la capacità di individuare tutti i campioni positivi |
+| **Confusion Matrix** | Strumento diagnostico per analizzare gli errori di classificazione |
+
+### Qualità Generativa
+
+| Metrica | Descrizione |
+|---|---|
+| **Fréchet Inception Distance (FID)** | Distanza tra le distribuzioni delle feature Inception-v3 per reali e sintetici. Valori inferiori = maggiore somiglianza. |
+| **Kernel Inception Distance (KID)** | Stimatore non distorto basato su MMD, particolarmente affidabile con dataset di dimensioni limitate. |
+
+---
+
+## 7. Interpretabilità e Analisi delle Feature
+
+Per comprendere come il classificatore organizza le rappresentazioni interne e quantificare il domain shift, vengono estratte le feature dal penultimo layer della ResNet-18 (spazio a 512 dimensioni) e proiettate in 2D tramite:
+
+| Tecnica | Tipo | Scopo |
+|---|---|---|
+| **PCA** | Lineare | Identifica le componenti di massima varianza globale |
+| **t-SNE** | Non-lineare | Preserva le relazioni di vicinanza locale, evidenzia cluster |
+| **UMAP** | Non-lineare | Bilancia topologia locale e globale, evidenzia la struttura a livello di manifold |
+
+Queste visualizzazioni permettono di verificare se i campioni sintetici risiedono in cluster separati da quelli reali e motivano l'applicazione della Domain Adaptation.
+
+---
+
+## 8. Domain Adaptation Avversariale (DANN)
+
+Per mitigare il domain shift residuo tra immagini reali e sintetiche, viene implementata una **Domain-Adversarial Neural Network (DANN)**:
+
+| Componente | Architettura | Ruolo |
+|---|---|---|
+| **Feature Extractor (G_f)** | ResNet-18 backbone → avgpool → 512-dim | Estrae rappresentazioni latenti |
+| **Label Predictor (G_y)** | FC(512 → 2) | Classifica Normal vs Pneumonia (task principale) |
+| **Domain Discriminator (G_d)** | MLP(512 → 256 → 128 → 1) + Dropout | Distingue reale da sintetico |
+| **Gradient Reversal Layer (GRL)** | Identità in forward, −λ in backward | Forza l'invarianza di dominio |
+
+La loss combinata è:
+
+$$L = L_{task}^{real} + \alpha_{synth} \cdot L_{task}^{synth} - \lambda \cdot L_{domain}$$
+
+dove λ cresce sigmoidalmente da 0 a 1 durante il training (scheduling di Ganin et al., 2016) e α_synth controlla il peso della supervisione sui campioni sintetici (Supervised Domain Adaptation).
+
+---
+
+## 9. Risultati Attesi
+
+1. Le GAN con PatchGAN e simil-BAGAN produrranno campioni di qualità superiore in termini di texture locale
+2. L'augmentation generativa migliorerà il Macro F1-Score rispetto alle baseline tradizionali (Class Weighting, Oversampling)
+3. Esiste una percentuale ottimale di augmentation (non necessariamente il 100%) che massimizza le performance
+4. L'analisi PCA/t-SNE/UMAP rivelerà un domain shift residuo tra reali e sintetici
+5. Il DANN ridurrà il domain gap, migliorando ulteriormente la robustezza del classificatore su dati reali
