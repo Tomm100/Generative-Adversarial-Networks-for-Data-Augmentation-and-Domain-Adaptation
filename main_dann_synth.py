@@ -77,11 +77,6 @@ GEN_D = 128
 # ⚙️ CONFIGURAZIONE GENERALE
 # ==============================================================================
 
-# Epoch della GAN da usare per generare le immagini sintetiche
-# (sostituire XXX nel path sopra, oppure modificare questo valore se il path
-#  viene costruito dinamicamente — vedi STEP 0)
-GAN_EPOCH_TO_USE = 220
-
 # Percentuale del gap NORMAL/PNEUMONIA da colmare con le sintetiche.
 # Es: 100 = colma tutto il gap (bilanciamento completo)
 #      50 = colma metà del gap

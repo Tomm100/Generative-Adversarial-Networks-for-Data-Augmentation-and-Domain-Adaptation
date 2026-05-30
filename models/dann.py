@@ -17,9 +17,6 @@ from torch.autograd import Function
 import torchvision.models as models
 
 
-# ═══════════════════════════════════════════════════════════════
-# Gradient Reversal Layer
-# ═══════════════════════════════════════════════════════════════
 
 class GradientReversalFunction(Function):
     """
