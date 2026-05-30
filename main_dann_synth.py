@@ -41,38 +41,45 @@ from utils.seed import set_seed
 # ==============================================================================
 # ⚙️ CONFIGURAZIONE GAN (Decommentare UNA sola configurazione alla volta)
 # ==============================================================================
+
+# Epoch della GAN da cui caricare i pesi del generatore
+GAN_EPOCH_TO_USE = 220
+
 #
 # ── 1. WGAN-GP 128 con PatchGAN + BAGAN ──
 # from models.wgan import Generator
-# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_Pg_Bg_128/gan_checkpoints/G_epoch_XXX.pth"
+# GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_Pg_Bg_128/gan_checkpoints"
 # GEN_D = 128
 #
 # ── 2. WGAN-GP 128 senza PatchGAN e senza BAGAN ──
 # from models.wgan import Generator
-# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_noPg_noBg_128/gan_checkpoints/G_epoch_XXX.pth"
+# GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_WGAN_noPg_noBg_128/gan_checkpoints"
 # GEN_D = 128
 #
 # ── 3. SNGAN 128 con PatchGAN + BAGAN ──
 # NOTA: i checkpoint PG+BG 128 sono stati addestrati con l'architettura di wgan.py Generator
 from models.wgan import Generator
-GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_XXX.pth"
+GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints"
 GEN_D = 128
 #
 # ── 4. SNGAN 128 senza PatchGAN e senza BAGAN ──
 # from models.sngan_128 import SNGenerator as Generator
-# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_128/sngan_checkpoints/G_epoch_XXX.pth"
+# GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_128/sngan_checkpoints"
 # GEN_D = 128
 #
 # ── 5. SNGAN 256 con PatchGAN + BAGAN ──
 # from models.sngan import SNGenerator as Generator
-# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_256/sngan_checkpoints/G_epoch_XXX.pth"
+# GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_256/sngan_checkpoints"
 # GEN_D = 128
 #
 # ── 6. SNGAN 256 senza PatchGAN e senza BAGAN ──
 # from models.sngan import SNGenerator as Generator
-# GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_256/sngan_checkpoints/G_epoch_XXX.pth"
+# GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_noPg_noBg_256/sngan_checkpoints"
 # GEN_D = 128
 #
+# Path completo costruito automaticamente da GAN_EPOCH_TO_USE
+GAN_WEIGHTS_PATH = os.path.join(GAN_CKPT_DIR_GAN, f"G_epoch_{GAN_EPOCH_TO_USE}.pth")
+
 # ==============================================================================
 # ⚙️ CONFIGURAZIONE GENERALE
 # ==============================================================================

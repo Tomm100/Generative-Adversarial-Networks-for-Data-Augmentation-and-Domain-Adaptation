@@ -11,6 +11,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from models.resnet import ResNetClassifier
+from models.dann_synth import DANNSynth
 from models.wgan import Generator
 from dataset.loader import setup_dataset, get_dataloaders
 from utils.seed import set_seed
@@ -22,30 +23,84 @@ from config import (
 # ==============================================================================
 # CONFIGURAZIONI UMAP E MODELLI
 # ==============================================================================
-# AGGIORNA CON I TUOI PATH REALI
+
+# ── Selezione Feature Extractor ──────────────────────────────────────────────
+# "resnet" = usa ResNetClassifier (backbone.fc → Identity)
+# "dann"   = usa DANNSynth (feature_extractor → flatten)
+USE_EXTRACTOR = "dann"  # <--- CAMBIA QUI: "resnet" oppure "dann"
+
+# Path pesi ResNet (usato solo se USE_EXTRACTOR = "resnet")
 RESNET_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/ResnetCheckpoint/best_model_Ablation_75pct.pth"
 
+# Path pesi DANN (usato solo se USE_EXTRACTOR = "dann")
+DANN_WEIGHTS_PATH = "./results/dann_synth_checkpoints/best_DANN_Synth.pth"
+
+# Path pesi GAN (per generare le sintetiche on-the-fly)
 GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
 
 GEN_D = 128
 NUM_SAMPLES_PER_CLASS = 500  # 500 Real Normal, 500 Real Pneumonia, 500 Fake Normal
 
-def load_resnet_extractor(device):
-    """Carica la ResNet e crea un estrattore sostituendo l'ultimo strato con Identity."""
-    print(f"\n[1/5] Caricamento ResNet da: {RESNET_WEIGHTS_PATH}")
-    model = ResNetClassifier(num_classes=2)
-    
-    if not os.path.exists(RESNET_WEIGHTS_PATH):
-        print(f"⚠️ ATTENZIONE: Modello ResNet non trovato. Verranno usati i pesi pre-addestrati (baseline).")
+
+# ==============================================================================
+# FEATURE EXTRACTORS
+# ==============================================================================
+
+class ResNetFeatureExtractor(nn.Module):
+    """Wrapper: carica ResNetClassifier e sostituisce fc con Identity."""
+
+    def __init__(self, weights_path, device):
+        super().__init__()
+        model = ResNetClassifier(num_classes=2)
+
+        if os.path.exists(weights_path):
+            model.load_state_dict(torch.load(weights_path, map_location=device))
+            print(f"  ✅ Pesi ResNet caricati da: {weights_path}")
+        else:
+            print(f"  ⚠️ Pesi ResNet non trovati. Uso pesi ImageNet (baseline).")
+
+        model.backbone.fc = nn.Identity()
+        self.model = model
+
+    def forward(self, x):
+        return self.model(x)  # (B, 512)
+
+
+class DANNFeatureExtractor(nn.Module):
+    """Wrapper: carica DANNSynth e usa solo il feature_extractor."""
+
+    def __init__(self, weights_path, device):
+        super().__init__()
+        model = DANNSynth(num_classes=2, pretrained=True)
+
+        if os.path.exists(weights_path):
+            model.load_state_dict(torch.load(weights_path, map_location=device))
+            print(f"  ✅ Pesi DANN caricati da: {weights_path}")
+        else:
+            print(f"  ⚠️ Pesi DANN non trovati. Uso pesi ImageNet (baseline).")
+
+        self.feature_extractor = model.feature_extractor
+
+    def forward(self, x):
+        feats = self.feature_extractor(x)       # (B, 512, 1, 1)
+        return feats.view(feats.size(0), -1)     # (B, 512)
+
+
+def load_feature_extractor(device):
+    """Carica il feature extractor selezionato tramite USE_EXTRACTOR."""
+    print(f"\n[1/5] Caricamento Feature Extractor: {USE_EXTRACTOR.upper()}")
+
+    if USE_EXTRACTOR == "resnet":
+        extractor = ResNetFeatureExtractor(RESNET_WEIGHTS_PATH, device)
+    elif USE_EXTRACTOR == "dann":
+        extractor = DANNFeatureExtractor(DANN_WEIGHTS_PATH, device)
     else:
-        model.load_state_dict(torch.load(RESNET_WEIGHTS_PATH, map_location=device))
-        print("✅ Pesi ResNet caricati correttamente.")
-    
-    # Bypassiamo il classificatore finale: l'output sarà direttamente il vettore [B, 512]
-    model.backbone.fc = nn.Identity()
-    model = model.to(device)
-    model.eval()
-    return model
+        raise ValueError(f"USE_EXTRACTOR non valido: '{USE_EXTRACTOR}'. Usa 'resnet' o 'dann'.")
+
+    extractor = extractor.to(device)
+    extractor.eval()
+    return extractor
+
 
 def get_balanced_real_features(extractor, loader, device, num_per_class):
     """Estrae esattamente `num_per_class` feature per NORMAL (0) e PNEUMONIA (1) dal loader."""
@@ -128,17 +183,20 @@ def get_synthetic_features(extractor, generator, device, num_samples):
 def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\n{'='*60}\n  UMAP FEATURE SPACE ANALYSIS (TRAINING MANIFOLD)\n{'='*60}")
+    extractor_label = USE_EXTRACTOR.upper()
+    print(f"\n{'='*60}\n  UMAP FEATURE SPACE ANALYSIS (TRAINING MANIFOLD)\n  Feature Extractor: {extractor_label}\n{'='*60}")
     print(f"Device: {device}")
     
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name="UMAP_Analysis_75pct",
+        name=f"UMAP_Analysis_{extractor_label}",
         config={
+            "extractor":            USE_EXTRACTOR,
             "num_samples_per_class": NUM_SAMPLES_PER_CLASS,
-            "resnet_weights": RESNET_WEIGHTS_PATH,
-            "gan_weights": GAN_WEIGHTS_PATH,
+            "resnet_weights":       RESNET_WEIGHTS_PATH if USE_EXTRACTOR == "resnet" else None,
+            "dann_weights":         DANN_WEIGHTS_PATH if USE_EXTRACTOR == "dann" else None,
+            "gan_weights":          GAN_WEIGHTS_PATH,
         }
     )
     
@@ -155,7 +213,7 @@ def main():
     )
     
     # --- 2. CARICAMENTO MODELLI ---
-    extractor = load_resnet_extractor(device)
+    extractor = load_feature_extractor(device)
     
     print(f"\n[2/5] Caricamento Generator da: {GAN_WEIGHTS_PATH}")
     generator = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GEN_D).to(device)
@@ -163,7 +221,7 @@ def main():
          print(f"❌ ERRORE: Modello GAN non trovato. Verifica il percorso.")
          return
     generator.load_state_dict(torch.load(GAN_WEIGHTS_PATH, map_location=device))
-    print("✅ Pesi SNGAN caricati correttamente.")
+    print("✅ Pesi GAN caricati correttamente.")
     
     # --- 3. ESTRAZIONE FEATURE ---
     print("\n[3/5] Estrazione feature dalle immagini REALI del TRAINING Set...")
@@ -222,7 +280,7 @@ def main():
                 alpha=alphas[i], edgecolors='white' if i==2 else 'none', 
                 s=60 if i==2 else 40, zorder=zorders[i]
             )
-        ax.set_title(f"{title} Projection of ResNet-18 Features", fontsize=16, fontweight='bold')
+        ax.set_title(f"{title} Projection — {extractor_label} Features", fontsize=16, fontweight='bold')
         ax.set_xlabel(f"{title} Dimension 1", fontsize=12)
         ax.set_ylabel(f"{title} Dimension 2", fontsize=12)
         ax.grid(True, linestyle='--', alpha=0.3)
@@ -231,7 +289,7 @@ def main():
     
     out_dir = os.path.join(RESULTS_DIR, "feature_analysis")
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, "pca_tsne_umap_resnet_features.png")
+    out_path = os.path.join(out_dir, f"pca_tsne_umap_{USE_EXTRACTOR}_features.png")
     
     plt.tight_layout()
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
@@ -239,7 +297,7 @@ def main():
     
     # --- 6. LOG WANDB ---
     wandb.log({
-        "Feature_Analysis/Train_Manifold_Projections": wandb.Image(out_path, caption="PCA, t-SNE, UMAP Projections")
+        "Feature_Analysis/Train_Manifold_Projections": wandb.Image(out_path, caption=f"PCA, t-SNE, UMAP — {extractor_label}")
     })
     wandb.finish()
 
