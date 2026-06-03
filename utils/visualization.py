@@ -1,6 +1,4 @@
-"""
-Utilità per la visualizzazione durante il training.
-"""
+"""Utilita per la visualizzazione durante il training."""
 
 import os
 import torch
@@ -8,21 +6,11 @@ import matplotlib.pyplot as plt
 
 
 def save_gan_samples(G, fixed_z, fixed_labels, epoch, samples_dir, num_vis=6):
-    """
-    Genera e salva una griglia di immagini sintetiche dal Generator.
-
-    Args:
-        G:             Generator
-        fixed_z:       noise fisso per confrontare le epoche
-        fixed_labels:  label condizionali fisse
-        epoch:         epoca corrente (usata nel titolo e nel nome file)
-        samples_dir:   cartella dove salvare le immagini
-        num_vis:       numero di immagini per classe nella griglia
-    """
+    """Genera e salva una griglia di immagini sintetiche dal Generator."""
     G.eval()
     with torch.no_grad():
         imgs = G(fixed_z, fixed_labels)
-        imgs = (imgs + 1) / 2  # [-1,1] → [0,1]
+        imgs = (imgs + 1) / 2
     G.train()
 
     fig, axes = plt.subplots(2, num_vis, figsize=(num_vis * 2.5, 5))

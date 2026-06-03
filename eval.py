@@ -9,10 +9,7 @@ import torch.nn.functional as F
 from config import GAN_GEN_BATCH_SIZE, GAN_JPEG_QUALITY
 
 def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Phase1", out_dir='./results'):
-    """
-    Valuta il modello sul test set e salva i grafici e le metriche in `out_dir`.
-    Restituisce il classification report e la confusion matrix.
-    """
+    """Valuta il modello sul test set e salva i grafici e le metriche."""
     os.makedirs(out_dir, exist_ok=True)
     model.load_state_dict(torch.load(ckpt_path))
     model = model.to(device)
@@ -35,12 +32,10 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
     report_str = classification_report(all_labels, all_preds, target_names=class_names)
     print(report_str)
 
-    # Salva il report in formato testuale
     with open(os.path.join(out_dir, f'report_{tag}.txt'), 'w') as f:
         f.write(f"RISULTATI {tag}\n{'='*50}\n")
         f.write(report_str)
 
-    # Plot e salvataggio Confusion Matrix
     cm = confusion_matrix(all_labels, all_preds)
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -59,14 +54,12 @@ def evaluate_on_test(model, ckpt_path, test_loader, class_names, device, tag="Ph
         f"{tag}_Test/ROC_Curve": wandb.plot.roc_curve(all_labels, all_probs, labels=class_names),
         f"{tag}_Test/PR_Curve": wandb.plot.pr_curve(all_labels, all_probs, labels=class_names)
     })
-    plt.close(fig) # Non usiamo plt.show() in esecuzione batch su server
+    plt.close(fig)
 
     return report_dict, cm
 
 def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class, device, syn_dir='synthetic_images'):
-    """
-    Genera immagini sintetiche per bilanciare il dataset originale.
-    """
+    """Genera immagini sintetiche per bilanciare il dataset originale."""
     os.makedirs(os.path.join(syn_dir, 'NORMAL'), exist_ok=True)
     os.makedirs(os.path.join(syn_dir, 'PNEUMONIA'), exist_ok=True)
 
@@ -89,13 +82,8 @@ def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class,
 
                 for i in range(batch_sz):
                     img = fakes[i].cpu()
-                    img = (img + 1) / 2.0  # [-1,1] -> [0,1]
+                    img = (img + 1) / 2.0
                     img_pil = transforms.ToPILImage()(img)
-                    # Salva come JPEG (stesso formato delle immagini reali)
-                    # per evitare che la differenza PNG vs JPEG crei un
-                    # "fingerprint" sfruttabile dal classificatore.
-                    # convert('RGB') necessario perché ResNet si aspetta 3 canali
-                    # e ImageFolder carica in RGB di default.
                     img_rgb = img_pil.convert('RGB')
                     img_rgb.save(
                         os.path.join(syn_dir, cls_name, f'syn_{cls_name}_{generated+i}.jpeg'),
@@ -105,14 +93,11 @@ def generate_synthetic_images(G, num_gen_normal, num_gen_pneumonia, nz, n_class,
                 generated += batch_sz
 
             print(f"  {cls_name}: generate {num_gen} immagini sintetiche")
-    print("Generazione completata! ✅")
+    print("Generazione completata!")
 
 
 def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p3, out_dir='./results'):
-    """
-    Stampa le metriche a confronto e plotta le curve e matrici side-by-side.
-    Salva i plot e il report finale in `out_dir`.
-    """
+    """Confronto metriche e plot delle curve e matrici side-by-side."""
     os.makedirs(out_dir, exist_ok=True)
     
     comp_text = []
@@ -127,13 +112,13 @@ def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p
             v1 = report_p1[cls][m]
             v3 = report_p3[cls][m]
             diff = v3 - v1
-            arrow = "↑" if diff > 0 else "↓" if diff < 0 else "="
-            comp_text.append(f"    {m:12s}: {v1:.4f} → {v3:.4f}  ({arrow} {abs(diff):.4f})")
+            arrow = "+" if diff > 0 else "-" if diff < 0 else "="
+            comp_text.append(f"    {m:12s}: {v1:.4f} -> {v3:.4f}  ({arrow} {abs(diff):.4f})")
 
     acc_p1, acc_p3 = report_p1['accuracy'], report_p3['accuracy']
     diff_acc = acc_p3 - acc_p1
-    arrow = "↑" if diff_acc > 0 else "↓"
-    comp_text.append(f"\n  Overall Acc: {acc_p1:.4f} → {acc_p3:.4f}  ({arrow} {abs(diff_acc):.4f})")
+    arrow = "+" if diff_acc > 0 else "-"
+    comp_text.append(f"\n  Overall Acc: {acc_p1:.4f} -> {acc_p3:.4f}  ({arrow} {abs(diff_acc):.4f})")
 
     full_output = "\n".join(comp_text)
     print(full_output)
@@ -141,7 +126,6 @@ def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p
     with open(os.path.join(out_dir, 'comparison_report.txt'), 'w') as f:
         f.write(full_output)
 
-    # Plot confronto curve
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     for i, metric in enumerate(['train_loss', 'val_loss', 'val_acc']):
         axes[i].plot(hist_p1[metric], label='Phase 1', marker='o')
@@ -154,7 +138,6 @@ def plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes, report_p1, report_p
     plt.savefig(os.path.join(out_dir, 'comparison_p1_vs_p3.png'))
     plt.close(fig)
 
-    # Matrici
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     sns.heatmap(cm_p1, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes, ax=ax1)
     ax1.set_title('Phase 1 (Baseline)')

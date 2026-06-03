@@ -12,11 +12,9 @@ from config import (
     GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D, SEED, RESULTS_DIR
 )
 from dataset.loader import setup_dataset
-# ── SNGAN 128 PG+BG (checkpoint addestrati con architettura wgan.py) ──
+# SNGAN 128 PG+BG (checkpoint addestrati con architettura wgan.py)
 from models.wgan import Generator
-# ── SNGAN 128 NoPG+NoBG ──
 # from models.sngan_128 import SNGenerator as Generator
-# ── SNGAN 256 ──
 # from models.sngan import SNGenerator as Generator
 
 from eval import generate_synthetic_images
@@ -44,9 +42,7 @@ class ResizedImageDataset(Dataset):
 
 
 def compute_FID_and_KID(real_dir, synth_dir, epoch, device):
-    """
-    Calcola FID e KID confrontando due dataset e logga i risultati su WandB.
-    """
+    """Calcola FID e KID confrontando due dataset."""
     print(f"  Calcolo metriche FID e KID in corso...")
     real_dataset = ResizedImageDataset(real_dir, size=(SNGAN_IMG_SIZE, SNGAN_IMG_SIZE))
     synth_dataset = ResizedImageDataset(synth_dir, size=(SNGAN_IMG_SIZE, SNGAN_IMG_SIZE))
@@ -64,8 +60,8 @@ def compute_FID_and_KID(real_dir, synth_dir, epoch, device):
     fid_score = metrics['frechet_inception_distance']
     kid_score = metrics['kernel_inception_distance_mean']
 
-    print(f"  📊 FID: {fid_score:.4f}")
-    print(f"  📊 KID: {kid_score:.4f}")
+    print(f"  FID: {fid_score:.4f}")
+    print(f"  KID: {kid_score:.4f}")
     if wandb.run is not None:
         wandb.log({
             "Fidelity/Epoch": epoch,
@@ -131,7 +127,7 @@ def main():
 
         shutil.rmtree(epoch_synth_dir)
 
-    print("\n✅ Valutazione SNGAN completa!")
+    print("\nValutazione SNGAN completa!")
     wandb.finish()
 
 if __name__ == '__main__':

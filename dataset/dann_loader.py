@@ -1,11 +1,4 @@
-"""
-DataLoader per DANN (Domain-Adversarial Neural Network).
-
-Crea DataLoader bilanciati per Source e Target domain con:
-  - Trasformazioni minimali (no data augmentation): solo Resize, ToTensor, Normalize
-  - WeightedRandomSampler per gestire sbilanciamento classi
-  - num_samples allineato al dataset più grande → stessa lunghezza iterazione
-"""
+"""DataLoader per DANN (Domain-Adversarial Neural Network)."""
 
 import os
 import numpy as np
@@ -16,16 +9,7 @@ from config import NUM_WORKERS, PIN_MEMORY, PERSISTENT_WORKERS
 
 
 def _make_balanced_sampler(dataset, num_samples):
-    """
-    Crea un WeightedRandomSampler con pesi inversi alla frequenza di classe.
-
-    Args:
-        dataset: ImageFolder dataset
-        num_samples: numero di campioni da estrarre per epoca
-
-    Returns:
-        WeightedRandomSampler
-    """
+    """Crea un WeightedRandomSampler con pesi inversi alla frequenza di classe."""
     labels = [label for _, label in dataset.samples]
     class_counts = np.bincount(labels)
     class_weights = 1.0 / class_counts
@@ -39,36 +23,16 @@ def _make_balanced_sampler(dataset, num_samples):
 
 
 def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
-    """
-    Crea i DataLoader per il training DANN.
-
-    Vincoli rispettati:
-      - Nessuna data augmentation (solo Resize + ToTensor + Normalize)
-      - WeightedRandomSampler su entrambi i domini
-      - Batch 50/50: ogni step usa un batch Source + un batch Target
-      - Normalizzazione con statistiche ImageNet (backbone pretrained)
-
-    Args:
-        source_dir: root del Source dataset (con sottocartelle train/, val/, test/)
-        target_dir: root del Target dataset (con sottocartelle train/, val/, test/)
-        img_size: dimensione immagini (default 128, allineato a DANN_IMG_SIZE)
-        batch_size: batch size per singolo dominio (il batch totale sarà 2×batch_size)
-
-    Returns:
-        (source_train_loader, target_train_loader,
-         target_val_loader, target_test_loader, class_names)
-    """
-    # ── Trasformazioni minimali (NO augmentation) ──
+    """Crea i DataLoader per il training DANN."""
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
         transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],   # Statistiche ImageNet
+            mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
         )
     ])
 
-    # ── Carica dataset ──
     source_train = datasets.ImageFolder(
         root=os.path.join(source_dir, 'train'), transform=transform)
     target_train = datasets.ImageFolder(
@@ -78,16 +42,11 @@ def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
     target_test = datasets.ImageFolder(
         root=os.path.join(target_dir, 'test'), transform=transform)
 
-    # ── Allinea num_samples al dataset più grande ──
-    # Questo garantisce che entrambi i DataLoader abbiano la stessa
-    # lunghezza di iterazione (nessun dominio si esaurisce prima)
     num_samples = max(len(source_train), len(target_train))
 
-    # ── WeightedRandomSampler per bilanciamento classi ──
     source_sampler = _make_balanced_sampler(source_train, num_samples)
     target_sampler = _make_balanced_sampler(target_train, num_samples)
 
-    # ── DataLoader ──
     source_train_loader = DataLoader(
         source_train, batch_size=batch_size,
         sampler=source_sampler, drop_last=True,
@@ -109,24 +68,19 @@ def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
         num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
         persistent_workers=PERSISTENT_WORKERS)
 
-    # ── Stampa info ──
     source_labels = [l for _, l in source_train.samples]
     target_labels = [l for _, l in target_train.samples]
     source_counts = np.bincount(source_labels)
     target_counts = np.bincount(target_labels)
 
-    print(f"\n  ╔═══════════════════════════════════════════════════╗")
-    print(f"  ║           DANN DataLoader Configuration           ║")
-    print(f"  ╠═══════════════════════════════════════════════════╣")
-    print(f"  ║  Source (train): {dict(zip(source_train.classes, source_counts))}")
-    print(f"  ║  Target (train): {dict(zip(target_train.classes, target_counts))}")
-    print(f"  ║  Target (val):   {len(target_val)} samples")
-    print(f"  ║  Target (test):  {len(target_test)} samples")
-    print(f"  ║  Samples/epoch:  {num_samples} (aligned to max)")
-    print(f"  ║  Batch/domain:   {batch_size}  (total: {2 * batch_size})")
-    print(f"  ║  Image size:     {img_size}×{img_size}")
-    print(f"  ║  Normalize:      ImageNet stats")
-    print(f"  ╚═══════════════════════════════════════════════════╝")
+    print(f"\n  DANN DataLoader Configuration")
+    print(f"  Source (train): {dict(zip(source_train.classes, source_counts))}")
+    print(f"  Target (train): {dict(zip(target_train.classes, target_counts))}")
+    print(f"  Target (val):   {len(target_val)} samples")
+    print(f"  Target (test):  {len(target_test)} samples")
+    print(f"  Samples/epoch:  {num_samples}")
+    print(f"  Batch/domain:   {batch_size}  (total: {2 * batch_size})")
+    print(f"  Image size:     {img_size}x{img_size}")
 
     return (source_train_loader, target_train_loader,
             target_val_loader, target_test_loader,
@@ -134,19 +88,7 @@ def get_dann_dataloaders(source_dir, target_dir, img_size=224, batch_size=32):
 
 
 def _make_target_test_loader(target_dir, img_size=128, batch_size=32):
-    """
-    Crea un DataLoader standalone per il Target test set a una risoluzione specifica.
-
-    Utile per valutare la ResNet pretrainata sul Target con una risoluzione arbitraria.
-
-    Args:
-        target_dir: root del Target dataset (con sottocartella test/)
-        img_size: dimensione immagini
-        batch_size: batch size
-
-    Returns:
-        (target_test_loader, class_names)
-    """
+    """Crea un DataLoader standalone per il Target test set."""
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
@@ -165,6 +107,6 @@ def _make_target_test_loader(target_dir, img_size=128, batch_size=32):
         num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
         persistent_workers=PERSISTENT_WORKERS)
 
-    print(f"\n  Target Test Loader ({img_size}×{img_size}): {len(target_test)} samples")
+    print(f"\n  Target Test Loader ({img_size}x{img_size}): {len(target_test)} samples")
 
     return target_test_loader, target_test.classes

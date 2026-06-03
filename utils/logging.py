@@ -1,7 +1,4 @@
-"""
-Utility di logging per WandB.
-Contiene funzioni per loggare confronti tra esperimenti.
-"""
+"""Utilita di logging per WandB."""
 
 import os
 import numpy as np
@@ -13,21 +10,13 @@ import seaborn as sns
 
 
 def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, out_dir):
-    """
-    Logga su WandB il confronto completo PRE-DANN vs POST-DANN:
-      - Tabella riassuntiva con tutte le metriche
-      - Bar chart per-classe (Precision, Recall, F1)
-      - Confusion matrices side-by-side
-      - Metriche scalari e delta
-    """
+    """Logga su WandB il confronto PRE-DANN vs POST-DANN."""
     os.makedirs(out_dir, exist_ok=True)
     metrics = ['precision', 'recall', 'f1-score']
 
-    # ── 1. Tabella riassuntiva WandB ──
-    columns = ["Metric", "PRE-DANN", "POST-DANN", "Δ"]
+    columns = ["Metric", "PRE-DANN", "POST-DANN", "Delta"]
     table_data = []
 
-    # Accuracy & Macro F1
     for label, key in [("Accuracy", 'accuracy'),
                        ("Macro F1", ('macro avg', 'f1-score'))]:
         if isinstance(key, tuple):
@@ -39,7 +28,6 @@ def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, o
         delta = v_post - v_pre
         table_data.append([label, round(v_pre, 4), round(v_post, 4), round(delta, 4)])
 
-    # Per-class metrics
     for cls in class_names:
         for m in metrics:
             v_pre = report_pre[cls][m]
@@ -49,7 +37,6 @@ def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, o
 
     wandb_table = wandb.Table(columns=columns, data=table_data)
 
-    # ── 2. Bar chart per-classe ──
     fig_bar, axes = plt.subplots(1, 3, figsize=(15, 5))
     x = np.arange(len(class_names))
     width = 0.35
@@ -73,7 +60,6 @@ def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, o
     plt.savefig(bar_path, dpi=150)
     plt.close(fig_bar)
 
-    # ── 3. Confusion matrices side-by-side ──
     fig_cm, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     sns.heatmap(cm_pre, annot=True, fmt='d', cmap='Blues',
                 xticklabels=class_names, yticklabels=class_names, ax=ax1)
@@ -91,18 +77,15 @@ def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, o
     plt.savefig(cm_cmp_path, dpi=150)
     plt.close(fig_cm)
 
-    # ── 4. Log tutto su WandB ──
     acc_pre = report_pre['accuracy']
     acc_post = report_post['accuracy']
     f1_pre = report_pre['macro avg']['f1-score']
     f1_post = report_post['macro avg']['f1-score']
 
     log_dict = {
-        # Tabella e immagini
         "Comparison/Summary_Table": wandb_table,
         "Comparison/Per_Class_Metrics": wandb.Image(bar_path),
         "Comparison/Confusion_Matrices": wandb.Image(cm_cmp_path),
-        # Scalari
         "Comparison/PreDANN_Accuracy": acc_pre,
         "Comparison/PostDANN_Accuracy": acc_post,
         "Comparison/PreDANN_Macro_F1": f1_pre,
@@ -111,7 +94,6 @@ def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, o
         "Comparison/Delta_Macro_F1": f1_post - f1_pre,
     }
 
-    # Per-class scalari
     for cls in class_names:
         for m in metrics:
             log_dict[f"Comparison/{cls}_PreDANN_{m}"] = report_pre[cls][m]
@@ -120,11 +102,9 @@ def log_dann_comparison(report_pre, report_post, cm_pre, cm_post, class_names, o
 
     wandb.log(log_dict)
 
-    # ── 5. Stampa riepilogo console ──
-    print(f"\n{'═'*60}")
+    print(f"\n{'='*60}")
     print(f"  CONFRONTO PRE-DANN vs POST-DANN (loggato su WandB)")
-    print(f"{'═'*60}")
-    print(f"  Accuracy:  {acc_pre:.4f} → {acc_post:.4f}  (Δ {acc_post - acc_pre:+.4f})")
-    print(f"  Macro F1:  {f1_pre:.4f} → {f1_post:.4f}  (Δ {f1_post - f1_pre:+.4f})")
-    print(f"  📊 Plot salvati in: {out_dir}")
-    print(f"  📊 Tutti i risultati loggati su WandB")
+    print(f"{'='*60}")
+    print(f"  Accuracy:  {acc_pre:.4f} -> {acc_post:.4f}  (Delta {acc_post - acc_pre:+.4f})")
+    print(f"  Macro F1:  {f1_pre:.4f} -> {f1_post:.4f}  (Delta {f1_post - f1_pre:+.4f})")
+    print(f"  Plot salvati in: {out_dir}")

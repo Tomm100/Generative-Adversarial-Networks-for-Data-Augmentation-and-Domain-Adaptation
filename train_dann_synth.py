@@ -1,13 +1,4 @@
-"""
-Training loop per DANN Synthetic Domain Adaptation (Synth→Real).
-
-Differenze rispetto al training DANN standard:
-  - task loss (CrossEntropy) calcolata SOLO sulle immagini REALI (Source)
-  - domain loss (BCE) calcolata su ENTRAMBI i domini (Source=0, Target=1)
-  - il GRL forza il feature extractor a non distinguere reale da sintetico
-  - λ cresce sigmoidalmente da 0 a 1 durante il training (Ganin et al., 2016)
-  - model selection basata su Macro F1 sul val set REALE
-"""
+"""Training loop per DANN Synthetic Domain Adaptation (Synth->Real)."""
 
 import torch
 import torch.nn as nn
@@ -27,11 +18,7 @@ from config import METRICS_DIR
 
 
 def compute_lambda_p(p):
-    """
-    Scheduling dinamico di λ (Ganin et al., 2016).
-    λ = 2 / (1 + exp(-10·p)) - 1,  p ∈ [0, 1]
-    Cresce sigmoideamente da ~0 (nessun reversal) a ~1 (reversal pieno).
-    """
+    """Scheduling dinamico di lambda (Ganin et al., 2016)."""
     return float(2.0 / (1.0 + np.exp(-10.0 * p)) - 1.0)
 
 
@@ -47,34 +34,10 @@ def train_dann_synth(
     val_loader=None,
     class_names=None
 ):
-    """
-    Training loop DANN Synth→Real (Supervised Domain Adaptation).
-
-    Args:
-        model:          DANNSynth instance
-        source_loader:  DataLoader immagini REALI con label di classe
-        target_loader:  DataLoader immagini SINTETICHE con label di classe (NORMAL=0)
-        device:         torch.device
-        epochs:         numero epoche
-        lr_feature:     LR per il Feature Extractor (pretrained — va preservato)
-        lr_classifier:  LR per Label Predictor e Domain Discriminator
-        beta1:          β₁ di Adam (0.5 per stabilità con GRL)
-        alpha_synth:    peso della task loss sui sintetici (Supervised DA)
-                        0.0 = UDA puro | 0.5 = bilanciato | 1.0 = simmetrico
-        tag:            identificativo per WandB e checkpoint
-        checkpoints_dir: cartella checkpoint
-        val_loader:     DataLoader val set REALE (per model selection)
-        class_names:    ['NORMAL', 'PNEUMONIA']
-
-    Returns:
-        (model, history, best_ckpt_path)
-    """
+    """Training loop DANN Synth->Real (Supervised Domain Adaptation)."""
     os.makedirs(checkpoints_dir, exist_ok=True)
     model = model.to(device)
 
-    # Optimizer con LR differenziati:
-    # Feature extractor (solo layer3+layer4 sbloccati) → LR basso per non distruggere i pesi
-    # Classificatori (task + domain) → LR alto per convergenza rapida
     feat_params = [p for p in model.feature_extractor.parameters() if p.requires_grad]
     optimizer = optim.Adam([
         {'params': feat_params,                                'lr': lr_feature},
@@ -82,8 +45,8 @@ def train_dann_synth(
         {'params': model.domain_discriminator.parameters(),    'lr': lr_classifier},
     ], betas=(beta1, 0.999))
 
-    criterion_class  = nn.CrossEntropyLoss()     # task: NORMAL vs PNEUMONIA
-    criterion_domain = nn.BCEWithLogitsLoss()    # domain: reale (0) vs sintetico (1)
+    criterion_class  = nn.CrossEntropyLoss()
+    criterion_domain = nn.BCEWithLogitsLoss()
 
     ckpt_path = os.path.join(checkpoints_dir, f'best_{tag}.pth')
     best_val_f1 = -1.0
@@ -100,7 +63,7 @@ def train_dann_synth(
     total_steps = epochs * n_batches
 
     print(f"\n{'='*60}")
-    print(f"  DANN Synth→Real Training (Supervised DA) — {epochs} epoche")
+    print(f"  DANN Synth->Real Training (Supervised DA) -- {epochs} epoche")
     print(f"  Source (reali): {len(source_loader.dataset)} img")
     print(f"  Target (synth): {len(target_loader.dataset)} img")
     print(f"  LR Feature Extractor: {lr_feature}")
@@ -129,35 +92,25 @@ def train_dann_synth(
         epoch_domain_total    = 0
 
         for batch_idx in pbar:
-            # Progresso globale e λ crescente
             p = (epoch * n_batches + batch_idx) / total_steps
             lambda_p = compute_lambda_p(p)
 
-            # Sample dai due domini
-            x_real, y_real = next(source_iter)            # reali con label di classe
-            x_fake, y_fake = next(target_iter)            # sintetici: y_fake=0 (NORMAL)
+            x_real, y_real = next(source_iter)
+            x_fake, y_fake = next(target_iter)
 
             x_real, y_real = x_real.to(device), y_real.to(device)
             x_fake, y_fake = x_fake.to(device),  y_fake.to(device)
 
-            # Domain labels: 0 = reale (Source), 1 = sintetico (Target)
             d_real = torch.zeros(x_real.size(0), 1, device=device)
             d_fake = torch.ones(x_fake.size(0),  1, device=device)
 
-            # Forward: Source (reale)
             class_out_real, domain_out_real, _ = model(x_real, lambda_p)
-
-            # Forward: Target (sintetico) — ora anche per la task loss
             class_out_fake, domain_out_fake, _ = model(x_fake, lambda_p)
 
-            # Task loss: reali (peso 1.0) + sintetici (peso alpha_synth)
-            # └→ i sintetici contribuiscono alla testa classificativa (Supervised DA)
             loss_class_real = criterion_class(class_out_real, y_real)
             loss_class_fake = criterion_class(class_out_fake, y_fake)
             loss_class = loss_class_real + alpha_synth * loss_class_fake
 
-            # Domain loss: Source + Target
-            # └→ il GRL impedisce lo shortcut texture→classe nel backward
             loss_domain = (
                 criterion_domain(domain_out_real, d_real) +
                 criterion_domain(domain_out_fake, d_fake)
@@ -175,7 +128,6 @@ def train_dann_synth(
             epoch_loss_class_real += loss_class_real.item()
             epoch_loss_class_fake += loss_class_fake.item()
 
-            # Domain discriminator accuracy (diagnostica: deve tendere a 50%)
             with torch.no_grad():
                 d_pred_real = (torch.sigmoid(domain_out_real) < 0.5).sum().item()
                 d_pred_fake = (torch.sigmoid(domain_out_fake) >= 0.5).sum().item()
@@ -186,10 +138,9 @@ def train_dann_synth(
                 'cls_r': f"{loss_class_real.item():.3f}",
                 'cls_s': f"{loss_class_fake.item():.3f}",
                 'dom':   f"{loss_domain.item():.3f}",
-                'λ':     f"{lambda_p:.3f}"
+                'lam':   f"{lambda_p:.3f}"
             })
 
-        # Medie epoca
         avg_cls      = epoch_loss_class  / n_batches
         avg_cls_real = epoch_loss_class_real / n_batches
         avg_cls_fake = epoch_loss_class_fake / n_batches
@@ -206,7 +157,6 @@ def train_dann_synth(
         history['lambda_p'].append(final_lambda)
         history['domain_acc'].append(domain_acc)
 
-        # Valutazione su val set REALE
         val_acc, val_f1 = 0.0, 0.0
         if val_loader is not None:
             val_acc, val_f1 = _quick_eval(model, val_loader, device)
@@ -214,7 +164,6 @@ def train_dann_synth(
         history['val_acc'].append(val_acc)
         history['val_macro_f1'].append(val_f1)
 
-        # WandB logging
         wandb.log({
             f"{tag}/loss_class":        avg_cls,
             f"{tag}/loss_class_real":   avg_cls_real,
@@ -222,36 +171,34 @@ def train_dann_synth(
             f"{tag}/loss_domain":       avg_dom,
             f"{tag}/loss_total":        avg_tot,
             f"{tag}/lambda_p":          final_lambda,
-            f"{tag}/domain_disc_acc":   domain_acc,   # target: ~0.50 = GRL funziona
+            f"{tag}/domain_disc_acc":   domain_acc,
             f"{tag}/val_acc":           val_acc,
             f"{tag}/val_macro_f1":      val_f1,
             f"{tag}/epoch":             epoch + 1,
         })
 
-        # Best model selection su val Macro F1
         saved = ""
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1
             best_weights = {k: v.clone() for k, v in model.state_dict().items()}
-            saved = " ← best"
+            saved = " <- best"
 
         elapsed = (time.time() - start_time) / 60
         eta = (elapsed / (epoch + 1)) * (epochs - epoch - 1)
         print(f"  Epoch {epoch+1}/{epochs} | "
               f"CLS_r: {avg_cls_real:.4f} | CLS_s: {avg_cls_fake:.4f} | "
               f"DOM: {avg_dom:.4f} | D_acc: {domain_acc:.2f} | "
-              f"λ: {final_lambda:.3f} | "
+              f"lam: {final_lambda:.3f} | "
               f"ValAcc: {val_acc:.2f}% | ValF1: {val_f1:.4f}{saved} | "
               f"{elapsed:.1f}m (ETA: {eta:.1f}m)")
 
-    # Salva best model
     if best_weights is not None:
         model.load_state_dict(best_weights)
         torch.save(best_weights, ckpt_path)
     else:
         best_weights = {k: v.clone() for k, v in model.state_dict().items()}
         torch.save(best_weights, ckpt_path)
-        print("  ⚠️  Nessun val loader: salvato stato finale.")
+        print("  Nessun val loader: salvato stato finale.")
 
     print(f"\n  Best Val Macro F1: {best_val_f1:.4f}")
     print(f"  Checkpoint: {ckpt_path}")
@@ -260,7 +207,7 @@ def train_dann_synth(
 
 
 def _quick_eval(model, loader, device):
-    """Valutazione rapida (Accuracy + Macro F1) con λ=0 (nessun reversal)."""
+    """Valutazione rapida (Accuracy + Macro F1) con lambda=0."""
     model.eval()
     all_preds, all_labels = [], []
 
@@ -281,10 +228,7 @@ def _quick_eval(model, loader, device):
 
 def evaluate_dann_synth(model, ckpt_path, test_loader, class_names, device,
                         tag="DANN_Synth", out_dir=None):
-    """
-    Valutazione completa sul test set REALE con i best weights.
-    Salva classification report, confusion matrix e loga su WandB.
-    """
+    """Valutazione completa sul test set reale con i best weights."""
     if out_dir is None:
         out_dir = METRICS_DIR
     os.makedirs(out_dir, exist_ok=True)
@@ -302,7 +246,7 @@ def evaluate_dann_synth(model, ckpt_path, test_loader, class_names, device,
             all_labels.extend(y.numpy())
 
     print(f"\n{'='*60}")
-    print(f"  RISULTATI {tag} — Test Set REALE")
+    print(f"  RISULTATI {tag} -- Test Set REALE")
     print(f"{'='*60}")
 
     report_dict = classification_report(
@@ -311,19 +255,17 @@ def evaluate_dann_synth(model, ckpt_path, test_loader, class_names, device,
         all_labels, all_preds, target_names=class_names)
     print(report_str)
 
-    # Salva report
     report_path = os.path.join(out_dir, f'report_{tag}.txt')
     with open(report_path, 'w') as f:
-        f.write(f"RISULTATI {tag} — Test Set REALE\n{'='*60}\n{report_str}")
+        f.write(f"RISULTATI {tag} -- Test Set REALE\n{'='*60}\n{report_str}")
 
-    # Confusion Matrix
     cm = confusion_matrix(all_labels, all_preds)
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=class_names, yticklabels=class_names, ax=ax)
     ax.set_xlabel('Predicted')
     ax.set_ylabel('True')
-    ax.set_title(f'Confusion Matrix — {tag}')
+    ax.set_title(f'Confusion Matrix -- {tag}')
     plt.tight_layout()
     cm_path = os.path.join(out_dir, f'cm_{tag}.png')
     plt.savefig(cm_path, dpi=150)

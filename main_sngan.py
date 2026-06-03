@@ -1,20 +1,5 @@
-"""
-Main script per SNGAN: Spectral Normalization GAN con Hinge Loss.
+"""Main script per SNGAN: Spectral Normalization GAN con Hinge Loss."""
 
-Pipeline identica a main.py ma con:
-  - Spectral Norm sul Critic (al posto di InstanceNorm + Gradient Penalty)
-  - Hinge Loss (al posto di Wasserstein Loss)
-  - n_critic=1 (al posto di 5)
-  - Stessa architettura convoluzionale della WGAN-GP
-
-Phase 1: Baseline ResNet (solo dati reali)
-Phase 2: Training SNGAN (Hinge + SN)
-Phase 3: Generazione sintetiche + Training ResNet su dataset augmented
-Confronto Phase 1 vs Phase 3
-
-Uso:
-  python main_sngan.py
-"""
 
 import torch
 import os
@@ -40,7 +25,7 @@ from train import train_resnet, train_sngan
 from eval import evaluate_on_test, generate_synthetic_images, plot_comparison
 from utils.seed import set_seed
 
-# Le configurazioni della SNGAN sono ora lette direttamente da config.py
+
 
 
 def main():
@@ -73,7 +58,7 @@ def main():
     wandb.define_metric("SNGAN/Epoch")
     wandb.define_metric("SNGAN/*",   step_metric="SNGAN/Epoch")
 
-    # ── 1. SETUP DATASET ──
+
     res = setup_dataset(dataset_dir=DATASET_DIR)
     if not res:
         return
@@ -85,14 +70,12 @@ def main():
     num_gen_normal    = n_train_p - n_train_n
     num_gen_pneumonia = 0
 
-    # ── 2. DATALOADERS ──
+
     train_loader, val_loader, test_loader, classes = get_dataloaders(
         train_dir, val_dir, test_dir,
         img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE)
 
-    # ══════════════════════════════════════════════════════════
-    #  PHASE 1: BASELINE RESNET
-    # ══════════════════════════════════════════════════════════
+
     print(f"\n{'='*60}\n  PHASE 1: Baseline ResNet (solo dati reali)\n{'='*60}")
 
     resnet_model, hist_p1, ckpt_p1 = train_resnet(
@@ -102,9 +85,7 @@ def main():
         resnet_model, ckpt_p1, test_loader, classes, device,
         tag="Phase1", out_dir=METRICS_DIR)
 
-    # ══════════════════════════════════════════════════════════
-    #  PHASE 2: TRAINING SNGAN
-    # ══════════════════════════════════════════════════════════
+
     print(f"\n{'='*60}\n  PHASE 2: Training SNGAN\n{'='*60}")
 
     gan_loader, _ = get_gan_dataloader(
@@ -131,9 +112,7 @@ def main():
         drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
     )
 
-    # ══════════════════════════════════════════════════════════
-    #  PHASE 3: RESNET SU DATASET AUGMENTED (SNGAN)
-    # ══════════════════════════════════════════════════════════
+
     print(f"\n{'='*60}\n  PHASE 3: ResNet su Dataset Augmented (SNGAN)\n{'='*60}")
 
     generate_synthetic_images(
@@ -168,13 +147,13 @@ def main():
         resnet_aug, ckpt_p3, test_loader, classes, device,
         tag="Phase3", out_dir=METRICS_DIR)
 
-    # ── Confronto finale ──
+
     plot_comparison(
         hist_p1, hist_p3, cm_p1, cm_p3, classes,
         report_p1, report_p3, out_dir=METRICS_DIR)
 
     wandb.finish()
-    print(f"\n  ✅ Pipeline SNGAN completata!")
+    print(f"\n  Pipeline SNGAN completata!")
 
 
 if __name__ == '__main__':

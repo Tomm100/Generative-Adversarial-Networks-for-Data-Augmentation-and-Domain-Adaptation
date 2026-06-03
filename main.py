@@ -68,8 +68,7 @@ def main():
         }
     )
 
-    # Assi X personalizzati per ogni sezione: disaccoppia il contatore
-    # globale di WandB così i grafici di fasi diverse non si sovrappongono.
+
     wandb.define_metric("Phase1/epoch")
     wandb.define_metric("Phase1/*",         step_metric="Phase1/epoch")
     wandb.define_metric("Phase3/epoch")
@@ -79,29 +78,27 @@ def main():
     wandb.define_metric("GAN_Val_TSTR/epoch")
     wandb.define_metric("GAN_Val_TSTR/*",   step_metric="GAN_Val_TSTR/epoch")
 
-    # --- 1. SETUP DATASET ---
+
     res = setup_dataset(dataset_dir=DATASET_DIR)
     if not res:
         return
     train_dir, val_dir, test_dir = res
 
-    # Conta immagini di training per calcolare il gap da colmare
+
     n_train_n = len(os.listdir(os.path.join(train_dir, 'NORMAL')))
     n_train_p = len(os.listdir(os.path.join(train_dir, 'PNEUMONIA')))
     print(f"  Train count: {n_train_n} NORMAL + {n_train_p} PNEUMONIA")
 
-    num_gen_normal = n_train_p - n_train_n   # Colma il gap per NORMAL
-    num_gen_pneumonia = 0                    # Nessuna per PNEUMONIA
+    num_gen_normal = n_train_p - n_train_n
+    num_gen_pneumonia = 0
 
-    # --- 2. DATALOADERS ---
+
     train_loader, val_loader, test_loader, classes = get_dataloaders(
         train_dir, val_dir, test_dir,
         img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE)
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    # ══════════════════════════════════════════════════════════
-    #  PHASE 1: BASELINE RESNET
-    # ══════════════════════════════════════════════════════════
+
     print(f"\n{'='*60}\n  PHASE 1: Baseline ResNet (solo dati reali)\n{'='*60}")
 
     model_p1, hist_p1, ckpt_p1 = train_resnet(
@@ -112,9 +109,7 @@ def main():
         model_p1, ckpt_p1, test_loader, classes, device,
         tag="Phase1", out_dir=METRICS_DIR)
 
-    # ══════════════════════════════════════════════════════════
-    #  PHASE 2: TRAINING WGAN-GP
-    # ══════════════════════════════════════════════════════════
+
     print(f"\n{'='*60}\n  PHASE 2: Training WGAN-GP\n{'='*60}")
     gan_loader, gan_classes = get_gan_dataloader(
         train_dir, img_size=GAN_IMG_SIZE, batch_size=GAN_BATCH_SIZE)
@@ -138,13 +133,11 @@ def main():
         save_every=GAN_SAVE_EVERY,
         models_dir=GAN_CHECKPOINTS_DIR,
         samples_dir=GAN_SAMPLES_DIR,
-        # Google Drive backup
+
         drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
         drive_dir=GAN_DRIVE_DIR)
 
-    # ══════════════════════════════════════════════════════════
-    #  PHASE 3: RESNET SU DATASET AUGMENTED (WGAN-GP)
-    # ══════════════════════════════════════════════════════════
+
     print(f"\n{'='*60}\n  PHASE 3: ResNet su Dataset Augmented (WGAN-GP)\n{'='*60}")
 
     generate_synthetic_images(
@@ -166,7 +159,7 @@ def main():
     n_aug_p = len(os.listdir(os.path.join(aug_train_dir, 'PNEUMONIA')))
     print(f"  Augmented: {n_aug_n} NORMAL + {n_aug_p} PNEUMONIA")
 
-    # Phase 3: ResNet su dataset augmented (training completo, non TSTR)
+
     aug_train_loader, _, _, _ = get_dataloaders(
         aug_train_dir, val_dir, test_dir,
         img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE)
@@ -179,12 +172,12 @@ def main():
         model_p3, ckpt_p3, test_loader, classes, device,
         tag="Phase3", out_dir=METRICS_DIR)
 
-    # ── Confronto finale ──
+
     plot_comparison(hist_p1, hist_p3, cm_p1, cm_p3, classes,
                     report_p1, report_p3, out_dir=METRICS_DIR)
 
     wandb.finish()
-    print(f"\n  ✅ Pipeline WGAN-GP completata!")
+    print(f"\n  Pipeline WGAN-GP completata!")
 
 if __name__ == '__main__':
     main()

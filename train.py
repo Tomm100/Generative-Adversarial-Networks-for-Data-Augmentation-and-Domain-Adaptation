@@ -22,21 +22,7 @@ from utils.visualization import save_gan_samples
 
 def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Phase1",
                  class_weights=None):
-    """
-    Allena ResNet18 (Feature Extractor / Classifier).
-    Salva il checkpoint migliore in base alla Macro F1 sul validation set.
-
-    Args:
-        train_loader:   DataLoader per il training
-        val_loader:     DataLoader per la validazione
-        device:         torch.device
-        epochs:         numero di epoche
-        lr:             learning rate
-        tag:            stringa identificativa per WandB e checkpoint
-        class_weights:  Tensor 1D di forma [num_classes] con pesi per la loss.
-                        Se None usa CrossEntropyLoss standard (nessun bilanciamento).
-                        Esempio: torch.tensor([w_normal, w_pneumonia], device=device)
-    """
+    """Allena ResNet18. Salva il checkpoint migliore in base alla Macro F1."""
     model = ResNetClassifier(num_classes=2)
     model = model.to(device)
 
@@ -45,7 +31,7 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
         print(f"  [Loss] CrossEntropyLoss con class_weights={class_weights.tolist()}")
     else:
         criterion = nn.CrossEntropyLoss()
-    # Passiamo all'ottimizzatore solo i parametri che non sono congelati (requires_grad=True)
+
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
 
     best_macro_f1 = -1.0
@@ -57,7 +43,6 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
     print(f"\n{'='*50}\nTraining {tag} ({epochs} epoche)\n{'='*50}")
 
     for epoch in range(epochs):
-        # --- Train ---
         model.train()
         rl = 0.0
         
@@ -73,7 +58,6 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
             
         avg_tl = rl / len(train_loader)
 
-        # --- Validation ---
         model.eval()
         vl, correct, total = 0.0, 0, 0
         all_preds, all_labels = [], []
@@ -105,17 +89,16 @@ def train_resnet(train_loader, val_loader, device, epochs=10, lr=0.001, tag="Pha
             f"{tag}/val_macro_f1": macro_f1,
             f"{tag}/epoch": epoch + 1
         })
-        # Best model selection by Macro F1
+
         saved = ""
         if macro_f1 > best_macro_f1:
             best_macro_f1 = macro_f1
             best_weights = {k: v.clone() for k, v in model.state_dict().items()}
-            saved = " ← best"
+            saved = " <- best"
 
         print(f"  Epoch {epoch+1}/{epochs} | TL: {avg_tl:.4f} | VL: {avg_vl:.4f} | "
               f"VA: {acc:.2f}% | Macro F1: {macro_f1:.4f}{saved}")
 
-    # Carica i pesi migliori
     model.load_state_dict(best_weights)
     torch.save(best_weights, ckpt_path)
     print(f"  Best Macro F1: {best_macro_f1:.4f} (salvato in {ckpt_path})")
@@ -132,71 +115,29 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                  models_dir='gan_checkpoints',
                  samples_dir='gan_samples',
                  use_bagan=True,
-                 # --- Backup Google Drive ---
                  drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
                  drive_dir=GAN_DRIVE_DIR):
-    """
-    Allena WGAN-GP.
-
-    Args:
-        G, D:               Generator e Critic (già su device)
-        gan_loader:         DataLoader per il training GAN
-        device:             torch device
-        compute_gp_fn:      funzione gradient penalty
-        epochs:             numero totale di epoche
-        lr:                 learning rate base
-        n_critic:           rapporto aggiornamenti critic/generator
-        nz, n_class:        config GAN
-        save_every:         salva checkpoint ogni N epoche
-        models_dir:         cartella checkpoint G/D
-        samples_dir:        cartella sample visivi
-        drive_backup_every: frequenza backup drive
-        drive_dir:          path per backup drive
-
-    Returns:
-        (G, g_final_path)
-    """
+    """Allena WGAN-GP."""
     import os
 
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(samples_dir, exist_ok=True)
 
-
-
-    # --- Inizializzazione pesi ---
     G.apply(wgan_weights_init)
     D.apply(wgan_weights_init)
 
-    # --- Ottimizzatori + LR Scheduler ---
     G_opt = optim.Adam(G.parameters(), lr=lr, betas=(beta1, beta2))
     D_opt = optim.Adam(D.parameters(), lr=lr, betas=(beta1, beta2), weight_decay=d_weight_decay)
 
-    # Decadimento lineare del learning rate verso 0 (come da paper WGAN-GP)
     G_scheduler = optim.lr_scheduler.LinearLR(G_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
     D_scheduler = optim.lr_scheduler.LinearLR(D_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
 
-    # --- (RESUME — disattivato per ora) ---
-    # Per riattivare il resume, aggiungere i parametri start_epoch, g_ckpt_path,
-    # d_ckpt_path alla signature e decommentare il blocco seguente.
-    # Salvare anche optimizer state_dict nei checkpoint per preservare i momenti di Adam.
-    #
-    # if g_ckpt_path and os.path.exists(g_ckpt_path):
-    #     ckpt = torch.load(g_ckpt_path, map_location=device)
-    #     G.load_state_dict(ckpt['model_state'])
-    #     G_opt.load_state_dict(ckpt['optimizer_state'])
-    # if d_ckpt_path and os.path.exists(d_ckpt_path):
-    #     ckpt = torch.load(d_ckpt_path, map_location=device)
-    #     D.load_state_dict(ckpt['model_state'])
-    #     D_opt.load_state_dict(ckpt['optimizer_state'])
-
-    # --- Label condizionali ---
     img_size = gan_loader.dataset[0][0].shape[1]
     onehot = torch.eye(n_class).view(n_class, n_class, 1, 1).to(device)
     fill = torch.zeros([n_class, n_class, img_size, img_size]).to(device)
     for i in range(n_class):
         fill[i, i, :, :] = 1
 
-    # --- Fixed noise per visualizzare evoluzione ---
     num_vis = GAN_NUM_VIS_SAMPLES
     fixed_z = torch.randn(num_vis * 2, nz, 1, 1).to(device)
     fixed_labels = torch.cat([
@@ -204,12 +145,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         onehot[torch.ones(num_vis, dtype=torch.long).to(device)]
     ])
 
-
-
-    # --- Training loop ---
     print(f"\nTraining WGAN-GP: {epochs} epoche")
     print(f"  LR: {lr} (LinearLR verso 0), n_critic={n_critic}")
-
 
     gan_start = time.time()
 
@@ -223,19 +160,15 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             x_, y_ = x_.to(device), y_.to(device)
             y_fill = fill[y_]
 
-            # --- Train Critic ---
             D.zero_grad()
             D_real = D(x_, y_fill).squeeze().mean()
 
             z = torch.randn(mb, nz, 1, 1).to(device)
-            # CRITICAL FIX: Genera i fake con la stessa label delle immagini reali
-            # per non corrompere la matematica della Gradient Penalty
             y_gen_critic = y_
             fake = G(z, onehot[y_gen_critic])
             D_fake = D(fake.detach(), y_fill).squeeze().mean()
 
             gp, _ = compute_gp_fn(D, x_, fake.detach(), y_fill, y_fill, device)
-            # Epsilon drift penalty: evita che i logit del Critic divergano
             epsilon_penalty = GAN_EPSILON_PENALTY_COEFF * (D_real ** 2).mean()
             d_loss = D_fake - D_real + gp + epsilon_penalty
             d_loss.backward()
@@ -244,20 +177,17 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             gp_losses.append(gp.item())
             eps_losses.append(epsilon_penalty.item())
 
-            # --- Train Generator ---
             if (batch_idx + 1) % n_critic == 0:
                 G.zero_grad()
                 z = torch.randn(mb, nz, 1, 1).to(device)
                 
                 if use_bagan:
-                    # BAGAN: bilanciamento 50/50 delle label per il Generator
                     half_mb = mb // 2
                     zeros = torch.zeros(half_mb, dtype=torch.long)
                     ones = torch.ones(mb - half_mb, dtype=torch.long)
                     y_gen_unshuffled = torch.cat([zeros, ones])
                     y_gen = y_gen_unshuffled[torch.randperm(mb)].to(device)
                 else:
-                    # Senza BAGAN: usa la distribuzione sbilanciata reale
                     y_gen = y_
                 
                 g_loss = -D(G(z, onehot[y_gen]), fill[y_gen]).squeeze().mean()
@@ -265,10 +195,8 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
                 G_opt.step()
                 g_losses.append(g_loss.item())
             
-            # Aggiorna progress bar con valori intermedi
             pbar_gan.set_postfix({'D': f"{d_loss.item():.2f}", 'G': f"{g_losses[-1] if g_losses else 0.0:.2f}"})
 
-        # --- LR Scheduler step (dopo ogni epoca) ---
         old_lr = G_opt.param_groups[0]['lr']
         G_scheduler.step()
         D_scheduler.step()
@@ -276,18 +204,15 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
         if new_lr != old_lr:
             print(f"  [LR decay] Epoca {epoch}: LR {old_lr:.8f} -> {new_lr:.8f}")
 
-        # --- Log + Sample ---
         elapsed = (time.time() - gan_start) / 60
         eta = (elapsed / epoch) * (epochs - epoch)
 
-        # Calcola metriche epoch-level (sempre, per log WandB completo)
         w_dist = -np.mean(d_losses) if d_losses else 0
         g_avg  = np.mean(g_losses)  if g_losses  else 0
         d_avg  = np.mean(d_losses)  if d_losses  else 0
         gp_avg = np.mean(gp_losses) if gp_losses else 0
         eps_avg = np.mean(eps_losses) if eps_losses else 0
 
-        
         log_dict = {
             "GAN_Training/Wasserstein_Dist": w_dist,
             "GAN_Training/Generator_Loss":   g_avg,
@@ -298,7 +223,6 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             "GAN_Training/Epoch":            epoch
         }
 
-        
         if epoch % 5 == 0 or epoch == 1:
             print(f"  [{epoch}/{epochs}] W_dist: {w_dist:.1f} | "
                   f"G_loss: {g_avg:.1f} | Time: {elapsed:.1f}m | ETA: {eta:.1f}m")
@@ -309,7 +233,6 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
 
         wandb.log(log_dict)
 
-        # --- Checkpoint locale (ogni save_every epoche) ---
         if epoch % save_every == 0 or epoch == epochs:
             g_path = os.path.join(models_dir, f'G_epoch_{epoch}.pth')
             d_path = os.path.join(models_dir, f'D_epoch_{epoch}.pth')
@@ -317,33 +240,23 @@ def train_wgangp(G, D, gan_loader, device, compute_gp_fn,
             torch.save(D.state_dict(), d_path)
             print(f"  [Checkpoint] G + D salvati localmente (ep.{epoch})")
 
-            # --- Backup su Google Drive (ogni drive_backup_every epoche) ---
             if (drive_dir and drive_backup_every > 0
                     and epoch % drive_backup_every == 0):
                 if os.path.isdir(os.path.dirname(drive_dir)) or os.path.exists(drive_dir):
-
                     os.makedirs(drive_dir, exist_ok=True)
                     shutil.copy(g_path, os.path.join(drive_dir, f'G_epoch_{epoch}.pth'))
                     shutil.copy(d_path, os.path.join(drive_dir, f'D_epoch_{epoch}.pth'))
-                    print(f"  [Drive Backup] G + D copiati su Drive (ep.{epoch}) → {drive_dir}")
+                    print(f"  [Drive Backup] G + D copiati su Drive (ep.{epoch}) -> {drive_dir}")
                     wandb.log({"GAN_Training/Drive_Backup_Epoch": epoch})
                 else:
-                    print(f"  [Drive Backup] ⚠️  Drive non montato, skip (ep.{epoch})")
+                    print(f"  [Drive Backup] Drive non montato, skip (ep.{epoch})")
 
-
-
-    # --- Fine training ---
     gan_time = (time.time() - gan_start) / 60
     g_final = os.path.join(models_dir, f'G_epoch_{epochs}.pth')
     print(f"\nGAN training completato in {gan_time:.1f} minuti!")
     print(f"  Checkpoint finali: {models_dir}/G_epoch_{epochs}.pth")
 
     return G, g_final
-
-
-
-
-
 
 
 def train_sngan(
@@ -359,41 +272,24 @@ def train_sngan(
     drive_backup_every=50,
     use_bagan=True,
 ):
-    """
-    Training loop SNGAN con Hinge Loss.
-
-    Hinge Loss:
-      D_loss = E[max(0, 1 - D(real))] + E[max(0, 1 + D(fake))]  → PatchGAN
-      G_loss = -E[D(fake)]
-
-    Returns:
-        (G, g_final_path)
-    """
+    """Training loop SNGAN con Hinge Loss."""
     os.makedirs(samples_dir, exist_ok=True)
     os.makedirs(models_dir, exist_ok=True)
 
-
-
-    # Inizializzazione pesi (solo Generator — Critic gestito da SN)
     G.apply(sngan_weights_init)
-    # NON applico weights_init al Critic: la SN gestisce già la scala dei pesi
 
-    # Stesso LR per G e D (niente TTUR — lezione imparata dalla SAGAN)
     G_opt = optim.Adam(G.parameters(), lr=lr, betas=(beta1, beta2))
     D_opt = optim.Adam(D.parameters(), lr=lr, betas=(beta1, beta2))
 
-    # Linear decay verso 0 (come nella WGAN-GP)
     G_sched = optim.lr_scheduler.LinearLR(G_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
     D_sched = optim.lr_scheduler.LinearLR(D_opt, start_factor=1.0, end_factor=0.0, total_iters=epochs)
 
-    # Label condizionali (stessa struttura della WGAN-GP)
-    img_size = gan_loader.dataset[0][0].shape[1]  # es. 256 per SNGAN
+    img_size = gan_loader.dataset[0][0].shape[1]
     onehot = torch.eye(n_class).view(n_class, n_class, 1, 1).to(device)
     fill = torch.zeros([n_class, n_class, img_size, img_size]).to(device)
     for i in range(n_class):
         fill[i, i, :, :] = 1
 
-    # Fixed noise per visualizzazione
     num_vis = GAN_NUM_VIS_SAMPLES
     fixed_z = torch.randn(num_vis * 2, nz, 1, 1).to(device)
     fixed_labels = torch.cat([
@@ -401,11 +297,8 @@ def train_sngan(
         onehot[torch.ones(num_vis, dtype=torch.long).to(device)]
     ])
 
-
-
     print(f"\nTraining SNGAN: {epochs} epoche (Hinge Loss + Spectral Norm)")
     print(f"  LR: {lr}, n_critic={n_critic}")
-
 
     gan_start = time.time()
 
@@ -418,16 +311,10 @@ def train_sngan(
             x_, y_ = x_.to(device), y_.to(device)
             y_fill = fill[y_]
 
-            # ═══════════════════════════════════════════
-            # Train Critic (Hinge Loss su PatchGAN output)
-            # ═══════════════════════════════════════════
             D.zero_grad()
-
-            # Real: max(0, 1 - D(real)) → media sulla griglia PatchGAN
-            d_real = D(x_, y_fill)  # [B, 1, 16, 16]
+            d_real = D(x_, y_fill)
             loss_real = torch.relu(1.0 - d_real).mean()
 
-            # Fake
             z = torch.randn(mb, nz, 1, 1).to(device)
             y_gen_critic = y_
             fake = G(z, onehot[y_gen_critic])
@@ -439,22 +326,17 @@ def train_sngan(
             D_opt.step()
             d_losses.append(d_loss.item())
 
-            # ═══════════════════════════════════════════
-            # Train Generator
-            # ═══════════════════════════════════════════
             if (batch_idx + 1) % n_critic == 0:
                 G.zero_grad()
                 z = torch.randn(mb, nz, 1, 1).to(device)
 
                 if use_bagan:
-                    # BAGAN: bilanciamento 50/50 delle label per il Generator
                     half = mb // 2
                     y_gen = torch.cat([
                         torch.zeros(half, dtype=torch.long),
                         torch.ones(mb - half, dtype=torch.long)
                     ])[torch.randperm(mb)].to(device)
                 else:
-                    # Senza BAGAN: usa la distribuzione sbilanciata reale
                     y_gen = y_
 
                 g_out = D(G(z, onehot[y_gen]), fill[y_gen])
@@ -468,11 +350,9 @@ def train_sngan(
                 'G': f"{g_losses[-1] if g_losses else 0:.3f}"
             })
 
-        # LR Scheduler
         G_sched.step()
         D_sched.step()
 
-        # Metriche
         elapsed = (time.time() - gan_start) / 60
         eta = (elapsed / epoch) * (epochs - epoch)
         d_avg = np.mean(d_losses)
@@ -497,7 +377,6 @@ def train_sngan(
 
         wandb.log(log_dict)
 
-        # Checkpoint
         if epoch % save_every == 0 or epoch == epochs:
             g_path = os.path.join(models_dir, f'G_epoch_{epoch}.pth')
             d_path = os.path.join(models_dir, f'D_epoch_{epoch}.pth')
@@ -505,24 +384,16 @@ def train_sngan(
             torch.save(D.state_dict(), d_path)
             print(f"  [Checkpoint] G + D salvati (ep.{epoch})")
 
-            # Drive backup
             if (drive_dir and drive_backup_every > 0
                     and epoch % drive_backup_every == 0):
                 if os.path.isdir(os.path.dirname(drive_dir)) or os.path.exists(drive_dir):
-
                     os.makedirs(drive_dir, exist_ok=True)
                     shutil.copy(g_path, os.path.join(drive_dir, f'G_sngan_epoch_{epoch}.pth'))
                     shutil.copy(d_path, os.path.join(drive_dir, f'D_sngan_epoch_{epoch}.pth'))
-                    print(f"  [Drive Backup] ep.{epoch} → {drive_dir}")
+                    print(f"  [Drive Backup] ep.{epoch} -> {drive_dir}")
 
-
-
-    # Fine training
     gan_time = (time.time() - gan_start) / 60
     g_final = os.path.join(models_dir, f'G_epoch_{epochs}.pth')
     print(f"\nSNGAN training completato in {gan_time:.1f} minuti!")
 
     return G, g_final
-
-
-
