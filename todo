@@ -1,0 +1,4 @@
+- Immagine pagina 6 GAN a 256x256
+- Curve AUCROC
+- Data Augmentation base per confronto
+- Domain Adaptation cross dataset
