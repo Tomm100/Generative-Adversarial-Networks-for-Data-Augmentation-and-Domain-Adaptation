@@ -3,3 +3,4 @@
 - Data Augmentation base per confronto
 - Domain Adaptation cross dataset
 - Spiegare che il nostro obiettivo è quello di bilanciare il dataset
+- Spiegare bene perchè è utile data augmentation real synth
