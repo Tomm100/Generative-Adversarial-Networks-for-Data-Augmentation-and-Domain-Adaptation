@@ -48,7 +48,7 @@ def main(ckpt_path):
         class_names=class_names, 
         device=device,
         tag="Evaluation", 
-        out_dir='./results'
+        out_dir='./results_provefinali'
     )
     
     wandb.finish()
