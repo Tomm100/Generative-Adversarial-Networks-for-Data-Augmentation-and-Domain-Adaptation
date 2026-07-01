@@ -1,11 +1,12 @@
 import argparse
 import os
 import torch
-from sklearn.metrics import f1_score, classification_report
+import wandb
 
 from config import DATASET_DIR, RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_NUM_CLASSES
 from dataset.loader import setup_dataset, get_dataloaders
 from models.resnet import ResNetClassifier
+from eval import evaluate_on_test
 
 def main(ckpt_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,38 +29,33 @@ def main(ckpt_path):
         print(f"ERRORE: file dei pesi non trovato ({ckpt_path})")
         return
 
-    print(f"Caricamento modello da: {ckpt_path}")
+    print(f"Inizializzazione modello...")
     model = ResNetClassifier(num_classes=RESNET_NUM_CLASSES)
-    model.load_state_dict(torch.load(ckpt_path, map_location=device))
-    model.to(device)
-    model.eval()
-
-    all_preds = []
-    all_labels = []
-
-    print("Valutazione sul test set in corso...")
-    with torch.no_grad():
-        for x, y in test_loader:
-            x, y = x.to(device), y.to(device)
-            logits = model(x)
-            _, pred = torch.max(logits, 1)
-            all_preds.extend(pred.cpu().numpy())
-            all_labels.extend(y.cpu().numpy())
-
-    macro_f1 = f1_score(all_labels, all_preds, average='macro')
-    weighted_f1 = f1_score(all_labels, all_preds, average='weighted')
     
-    print("\n" + "="*50)
-    print("RISULTATI F1 SCORE")
-    print("="*50)
-    print(f"Macro F1 Score:    {macro_f1:.4f}")
-    print(f"Weighted F1 Score: {weighted_f1:.4f}")
+    # evaluate_on_test usa wandb.log internamente, quindi dobbiamo inizializzarlo
+    wandb.init(
+        project="gan-chest-xray-augmentation",
+        entity="MachineLearningForVisionAndMultimedia",
+        name="evaluation_wrapper"
+    )
+
+    print(f"Esecuzione valutazione tramite eval.py...")
+    # evaluate_on_test carica internamente i pesi da ckpt_path e produce cm, report e log
+    report_dict, cm = evaluate_on_test(
+        model=model, 
+        ckpt_path=ckpt_path, 
+        test_loader=test_loader, 
+        class_names=class_names, 
+        device=device,
+        tag="Evaluation", 
+        out_dir='./results'
+    )
     
-    print("\nReport Completo per Classe:")
-    print(classification_report(all_labels, all_preds, target_names=class_names))
+    wandb.finish()
+    print("Valutazione completata. I plot della confusion matrix e report testuali sono stati salvati nella cartella ./results.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Calcola F1 Score di un classificatore addestrato")
+    parser = argparse.ArgumentParser(description="Wrapper per valutare un classificatore tramite eval.py")
     parser.add_argument("--ckpt", type=str, required=True, help="Percorso al file dei pesi del classificatore (es. model.pth)")
     args = parser.parse_args()
     main(args.ckpt)
