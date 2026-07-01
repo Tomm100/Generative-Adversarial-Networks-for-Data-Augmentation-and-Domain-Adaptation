@@ -1,13 +1,19 @@
 """
 Analisi ROC/AUC e Precision-Recall per il confronto:
-  1. Baseline  — ResNet su dataset sbilanciato originale
+  1. Baseline  — ResNet allenata su dataset sbilanciato originale
   2. Finale    — ResNet su dataset augmentato con SNGAN 128 PG+BG (75% gap)
 
-Genera curve ROC e PR (per-classe e macro), salva i plot come immagini
-e logga tutto su Weights & Biases.
+Pipeline:
+  - Allena la ResNet baseline sul dataset sbilanciato
+  - Carica il generatore SNGAN, genera immagini sintetiche al 75% del gap
+  - Crea il dataset augmentato e allena una seconda ResNet
+  - Calcola curve ROC e PR (per-classe e macro) per entrambi i modelli
+  - Salva plot e logga tutto su Weights & Biases
 """
 
 import os
+import shutil
+import random
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,29 +22,42 @@ import wandb
 
 from sklearn.metrics import (
     roc_curve, auc, precision_recall_curve, average_precision_score,
-    classification_report, confusion_matrix
+    classification_report,
 )
 
 from config import (
     DATASET_DIR, RESULTS_DIR, METRICS_DIR,
     RESNET_IMG_SIZE, RESNET_BATCH_SIZE, RESNET_NUM_CLASSES,
+    RESNET_EPOCHS, RESNET_LR,
+    GAN_NZ, GAN_N_CLASS, GAN_NC,
     SEED,
 )
 from dataset.loader import setup_dataset, get_dataloaders
 from models.resnet import ResNetClassifier
+from models.wgan import Generator          # SNGAN 128 PG+BG usa l'architettura wgan.Generator
+from train import train_resnet
+from eval import generate_synthetic_images
 from utils.seed import set_seed
 
 
 # ==============================================================================
 # PERCORSI DEI PESI — MODIFICA QUI
 # ==============================================================================
-BASELINE_CKPT = "/percorso/ai/pesi/best_model_Phase1.pth"          # Baseline (dataset sbilanciato)
-FINAL_CKPT    = "/percorso/ai/pesi/best_model_SNGAN_75pct.pth"     # SNGAN 128 PG+BG — 75% gap colmato
+# Pesi del Generatore SNGAN 128 PG+BG
+SNGAN_GEN_CKPT = "/percorso/ai/pesi/G_epoch_XXX.pth"
+# Dimensione del generatore (GAN_D)
+GEN_D = 128
+# Percentuale del gap da colmare (75%)
+AUGMENTATION_PCT = 75
 # ==============================================================================
 
 
 OUT_DIR = os.path.join(RESULTS_DIR, "roc_pr_analysis")
 
+
+# ==============================================================================
+# FUNZIONI DI ANALISI
+# ==============================================================================
 
 def collect_predictions(model, test_loader, device):
     """Raccoglie le probabilità e le etichette dal test set."""
@@ -89,11 +108,14 @@ def compute_pr_curves(y_true, y_prob, class_names):
         precision[i], recall[i], _ = precision_recall_curve(y_bin, y_prob[:, i])
         avg_prec[i] = average_precision_score(y_bin, y_prob[:, i])
 
-    # Macro-average AP
     avg_prec["macro"] = np.mean([avg_prec[i] for i in range(n_classes)])
 
     return precision, recall, avg_prec
 
+
+# ==============================================================================
+# FUNZIONI DI PLOTTING
+# ==============================================================================
 
 def plot_roc_comparison(roc_baseline, roc_final, class_names, out_dir):
     """Genera plot ROC side-by-side: Baseline vs Finale."""
@@ -106,7 +128,7 @@ def plot_roc_comparison(roc_baseline, roc_final, class_names, out_dir):
 
     for ax, fpr, tpr, roc_auc, title in [
         (axes[0], fpr_b, tpr_b, auc_b, "Baseline (Dataset Sbilanciato)"),
-        (axes[1], fpr_f, tpr_f, auc_f, "Finale (SNGAN 128 PG+BG — 75%)")
+        (axes[1], fpr_f, tpr_f, auc_f, f"Finale (SNGAN 128 PG+BG — {AUGMENTATION_PCT}%)")
     ]:
         for i in range(n_classes):
             ax.plot(fpr[i], tpr[i], color=colors[i], lw=2,
@@ -143,7 +165,7 @@ def plot_pr_comparison(pr_baseline, pr_final, class_names, out_dir):
 
     for ax, prec, rec, ap, title in [
         (axes[0], prec_b, rec_b, ap_b, "Baseline (Dataset Sbilanciato)"),
-        (axes[1], prec_f, rec_f, ap_f, "Finale (SNGAN 128 PG+BG — 75%)")
+        (axes[1], prec_f, rec_f, ap_f, f"Finale (SNGAN 128 PG+BG — {AUGMENTATION_PCT}%)")
     ]:
         for i in range(n_classes):
             ax.plot(rec[i], prec[i], color=colors[i], lw=2,
@@ -228,7 +250,7 @@ def plot_pr_overlay(pr_baseline, pr_final, class_names, out_dir):
         ax.legend(fontsize=9)
         ax.grid(True, alpha=0.3)
 
-    # Macro AP (text annotation, no curve for macro PR)
+    # Macro AP (text annotation)
     ax = axes[n_classes]
     ax.text(0.5, 0.6, f'Baseline Macro AP: {ap_b["macro"]:.4f}',
             ha='center', va='center', fontsize=14, color='#EF5350', fontweight='bold',
@@ -269,7 +291,6 @@ def build_summary_table(roc_b, roc_f, pr_b, pr_f, class_names):
         data.append([name, auc_b[i], auc_f[i], d_auc,
                      ap_b[i], ap_f[i], d_ap])
 
-    # Macro
     d_auc_macro = auc_f["macro"] - auc_b["macro"]
     d_ap_macro  = ap_f["macro"] - ap_b["macro"]
     data.append(["MACRO", auc_b["macro"], auc_f["macro"], d_auc_macro,
@@ -278,11 +299,9 @@ def build_summary_table(roc_b, roc_f, pr_b, pr_f, class_names):
     return wandb.Table(columns=columns, data=data)
 
 
-def evaluate_single_model(ckpt_path, test_loader, class_names, device, tag):
-    """Carica un checkpoint, esegue l'inferenza e calcola ROC + PR."""
-    model = ResNetClassifier(num_classes=RESNET_NUM_CLASSES).to(device)
-    model.load_state_dict(torch.load(ckpt_path, map_location=device))
-    print(f"\n  [{tag}] Modello caricato da: {ckpt_path}")
+def evaluate_model(model, test_loader, class_names, device, tag):
+    """Esegue l'inferenza e calcola ROC + PR su un modello già caricato."""
+    print(f"\n  [{tag}] Valutazione sul test set...")
 
     y_prob, y_true = collect_predictions(model, test_loader, device)
     y_pred = np.argmax(y_prob, axis=1)
@@ -299,17 +318,84 @@ def evaluate_single_model(ckpt_path, test_loader, class_names, device, tag):
     return y_prob, y_true, roc, pr, report
 
 
+# ==============================================================================
+# PIPELINE DI AUGMENTATION
+# ==============================================================================
+
+def create_augmented_dataset(train_dir, sngan_ckpt, device, augmentation_pct=75):
+    """
+    Carica il generatore SNGAN, genera immagini sintetiche per colmare
+    il gap al `augmentation_pct`% e crea il dataset augmentato.
+
+    Returns:
+        aug_train_dir (str): percorso della cartella di training augmentata
+    """
+    # Calcolo gap
+    n_train_n = len(os.listdir(os.path.join(train_dir, 'NORMAL')))
+    n_train_p = len(os.listdir(os.path.join(train_dir, 'PNEUMONIA')))
+    max_deficit = n_train_p - n_train_n
+    num_to_generate = int(max_deficit * (augmentation_pct / 100.0))
+
+    print(f"\n  Dataset originale: {n_train_n} NORMAL, {n_train_p} PNEUMONIA")
+    print(f"  Gap totale:        {max_deficit} immagini")
+    print(f"  Gap da colmare:    {augmentation_pct}% → {num_to_generate} immagini sintetiche")
+
+    # Caricamento generatore
+    print(f"\n  Caricamento Generatore SNGAN da: {sngan_ckpt}")
+    G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GEN_D).to(device)
+    G.load_state_dict(torch.load(sngan_ckpt, map_location=device))
+    G.eval()
+
+    # Generazione pool sintetico
+    pool_dir = os.path.join(RESULTS_DIR, "roc_pr_synthetic_pool")
+    if os.path.exists(pool_dir):
+        shutil.rmtree(pool_dir)
+
+    print("  Generazione immagini sintetiche...")
+    generate_synthetic_images(
+        G, num_gen_normal=num_to_generate, num_gen_pneumonia=0,
+        nz=GAN_NZ, n_class=GAN_N_CLASS, device=device, syn_dir=pool_dir
+    )
+
+    # Creazione dataset augmentato
+    aug_train_dir = os.path.join(RESULTS_DIR, "roc_pr_augmented_train")
+    if os.path.exists(aug_train_dir):
+        shutil.rmtree(aug_train_dir)
+    shutil.copytree(train_dir, aug_train_dir)
+
+    # Copia immagini sintetiche nella cartella NORMAL
+    syn_normal_dir = os.path.join(pool_dir, 'NORMAL')
+    if os.path.exists(syn_normal_dir):
+        dest_normal_dir = os.path.join(aug_train_dir, 'NORMAL')
+        syn_files = os.listdir(syn_normal_dir)
+        random.shuffle(syn_files)
+        for f in syn_files[:num_to_generate]:
+            shutil.copy(
+                os.path.join(syn_normal_dir, f),
+                os.path.join(dest_normal_dir, f)
+            )
+
+    n_aug_n = len(os.listdir(os.path.join(aug_train_dir, 'NORMAL')))
+    n_aug_p = len(os.listdir(os.path.join(aug_train_dir, 'PNEUMONIA')))
+    print(f"\n  Dataset augmentato: {n_aug_n} NORMAL + {n_aug_p} PNEUMONIA")
+
+    return aug_train_dir
+
+
+# ==============================================================================
+# MAIN
+# ==============================================================================
+
 def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # ── Verifica percorsi pesi ──
-    for path, name in [(BASELINE_CKPT, "Baseline"), (FINAL_CKPT, "Finale")]:
-        if not os.path.exists(path):
-            print(f"ERRORE: Checkpoint {name} non trovato: {path}")
-            print("Modifica i percorsi BASELINE_CKPT e FINAL_CKPT in cima al file.")
-            return
+    # ── Verifica percorso pesi SNGAN ──
+    if not os.path.exists(SNGAN_GEN_CKPT):
+        print(f"ERRORE: Checkpoint SNGAN non trovato: {SNGAN_GEN_CKPT}")
+        print("Modifica il percorso SNGAN_GEN_CKPT in cima al file.")
+        return
 
     # ── Dataset ──
     res = setup_dataset(dataset_dir=DATASET_DIR)
@@ -318,7 +404,7 @@ def main():
         return
     train_dir, val_dir, test_dir = res
 
-    _, _, test_loader, class_names = get_dataloaders(
+    train_loader, val_loader, test_loader, class_names = get_dataloaders(
         train_dir, val_dir, test_dir,
         img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE
     )
@@ -327,32 +413,87 @@ def main():
     wandb.init(
         project="gan-chest-xray-augmentation",
         entity="MachineLearningForVisionAndMultimedia",
-        name="ROC_PR_Baseline_vs_SNGAN_75pct",
+        name=f"ROC_PR_Baseline_vs_SNGAN_{AUGMENTATION_PCT}pct",
         config={
             "seed":                SEED,
             "resnet_img_size":     RESNET_IMG_SIZE,
             "resnet_batch_size":   RESNET_BATCH_SIZE,
-            "baseline_ckpt":       BASELINE_CKPT,
-            "final_ckpt":          FINAL_CKPT,
-            "final_description":   "SNGAN 128 PG+BG — 75% gap colmato",
+            "resnet_epochs":       RESNET_EPOCHS,
+            "resnet_lr":           RESNET_LR,
+            "sngan_ckpt":          SNGAN_GEN_CKPT,
+            "augmentation_pct":    AUGMENTATION_PCT,
+            "final_description":   f"SNGAN 128 PG+BG — {AUGMENTATION_PCT}% gap colmato",
             "analysis_type":       "ROC/AUC + Precision-Recall",
         }
     )
 
+    wandb.define_metric("Baseline/epoch")
+    wandb.define_metric("Baseline/*",    step_metric="Baseline/epoch")
+    wandb.define_metric("Finale/epoch")
+    wandb.define_metric("Finale/*",      step_metric="Finale/epoch")
+
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # ── Valutazione ──
+    # ==========================================================================
+    # STEP 1: Training Baseline ResNet (dataset sbilanciato originale)
+    # ==========================================================================
+    print(f"\n{'='*60}")
+    print("  STEP 1: Training Baseline ResNet (dataset sbilanciato)")
+    print(f"{'='*60}")
+
+    set_seed(SEED)
+    model_baseline, hist_baseline, ckpt_baseline = train_resnet(
+        train_loader, val_loader, device,
+        epochs=RESNET_EPOCHS, lr=RESNET_LR, tag="Baseline"
+    )
+
+    # ==========================================================================
+    # STEP 2: Augmentation con SNGAN e Training ResNet Finale
+    # ==========================================================================
+    print(f"\n{'='*60}")
+    print(f"  STEP 2: Augmentation SNGAN 128 PG+BG al {AUGMENTATION_PCT}%")
+    print(f"{'='*60}")
+
+    aug_train_dir = create_augmented_dataset(
+        train_dir, SNGAN_GEN_CKPT, device, augmentation_pct=AUGMENTATION_PCT
+    )
+
+    # Creiamo i dataloader per il dataset augmentato
+    aug_train_loader, _, _, _ = get_dataloaders(
+        aug_train_dir, val_dir, test_dir,
+        img_size=RESNET_IMG_SIZE, batch_size=RESNET_BATCH_SIZE
+    )
+
+    print(f"\n{'='*60}")
+    print(f"  STEP 3: Training ResNet Finale (dataset augmentato {AUGMENTATION_PCT}%)")
+    print(f"{'='*60}")
+
+    set_seed(SEED)
+    model_finale, hist_finale, ckpt_finale = train_resnet(
+        aug_train_loader, val_loader, device,
+        epochs=RESNET_EPOCHS, lr=RESNET_LR, tag="Finale"
+    )
+
+    # ==========================================================================
+    # STEP 4: Analisi ROC/PR
+    # ==========================================================================
+    print(f"\n{'='*60}")
+    print("  STEP 4: Analisi ROC/AUC e Precision-Recall")
+    print(f"{'='*60}")
+
+    # Valutazione Baseline
     print(f"\n{'='*60}")
     print("  VALUTAZIONE BASELINE")
     print(f"{'='*60}")
-    _, _, roc_b, pr_b, report_b = evaluate_single_model(
-        BASELINE_CKPT, test_loader, class_names, device, "Baseline")
+    y_prob_b, y_true_b, roc_b, pr_b, report_b = evaluate_model(
+        model_baseline, test_loader, class_names, device, "Baseline")
 
+    # Valutazione Finale
     print(f"\n{'='*60}")
-    print("  VALUTAZIONE FINALE (SNGAN 128 PG+BG — 75%)")
+    print(f"  VALUTAZIONE FINALE (SNGAN 128 PG+BG — {AUGMENTATION_PCT}%)")
     print(f"{'='*60}")
-    _, _, roc_f, pr_f, report_f = evaluate_single_model(
-        FINAL_CKPT, test_loader, class_names, device, "Finale")
+    y_prob_f, y_true_f, roc_f, pr_f, report_f = evaluate_model(
+        model_finale, test_loader, class_names, device, "Finale")
 
     # ── Plot ──
     print("\nGenerazione plot...")
@@ -362,8 +503,8 @@ def main():
     pr_over_path  = plot_pr_overlay(pr_b, pr_f, class_names, OUT_DIR)
 
     # ── Stampa riepilogo ──
-    fpr_b, tpr_b, auc_b = roc_b
-    fpr_f, tpr_f, auc_f = roc_f
+    _, _, auc_b = roc_b
+    _, _, auc_f = roc_f
     _, _, ap_b = pr_b
     _, _, ap_f = pr_f
 
@@ -420,18 +561,6 @@ def main():
         })
 
     # Curve interattive wandb (built-in)
-    for tag_name, y_true_arr, y_prob_arr in [("Baseline", None, None), ("Finale", None, None)]:
-        pass  # Le curve interattive vengono già gestite sotto
-
-    # Raccogliamo nuovamente le predizioni per le curve interattive wandb
-    model_b = ResNetClassifier(num_classes=RESNET_NUM_CLASSES).to(device)
-    model_b.load_state_dict(torch.load(BASELINE_CKPT, map_location=device))
-    y_prob_b, y_true_b = collect_predictions(model_b, test_loader, device)
-
-    model_f = ResNetClassifier(num_classes=RESNET_NUM_CLASSES).to(device)
-    model_f.load_state_dict(torch.load(FINAL_CKPT, map_location=device))
-    y_prob_f, y_true_f = collect_predictions(model_f, test_loader, device)
-
     wandb.log({
         "ROC_PR/Baseline_ROC_Interactive": wandb.plot.roc_curve(
             y_true_b, y_prob_b.tolist(), labels=class_names, title="ROC Baseline"),
@@ -447,7 +576,7 @@ def main():
     report_path = os.path.join(OUT_DIR, "roc_pr_summary.txt")
     with open(report_path, "w") as f:
         f.write("ANALISI ROC/AUC e PRECISION-RECALL\n")
-        f.write("Baseline vs SNGAN 128 PG+BG (75% gap)\n")
+        f.write(f"Baseline vs SNGAN 128 PG+BG ({AUGMENTATION_PCT}% gap)\n")
         f.write("=" * 60 + "\n\n")
         for i, name in enumerate(class_names):
             f.write(f"{name}:\n")
