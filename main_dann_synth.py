@@ -39,9 +39,9 @@ GAN_EPOCH_TO_USE = 220
 # GEN_D = 128
 #
 # 3. SNGAN 128 con PatchGAN + BAGAN
-# NOTA: i checkpoint PG+BG 128 sono addestrati con architettura wgan.py Generator
-from models.wgan import Generator
-GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints"
+# Generatore SNGAN (models.sngan_128.SNGenerator).
+from models.sngan_128 import SNGenerator as Generator
+GAN_CKPT_DIR_GAN = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128_snganG/sngan_checkpoints"
 GEN_D = 128
 #
 # 4. SNGAN 128 senza PatchGAN e senza BAGAN

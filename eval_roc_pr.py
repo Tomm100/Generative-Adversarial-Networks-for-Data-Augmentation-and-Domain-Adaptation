@@ -34,7 +34,7 @@ from config import (
 )
 from dataset.loader import setup_dataset, get_dataloaders
 from models.resnet import ResNetClassifier
-from models.wgan import Generator          # SNGAN 128 PG+BG usa l'architettura wgan.Generator
+from models.sngan_128 import SNGenerator as Generator   # SNGAN 128 PG+BG: generatore SNGAN
 from train import train_resnet
 from eval import generate_synthetic_images
 from utils.seed import set_seed

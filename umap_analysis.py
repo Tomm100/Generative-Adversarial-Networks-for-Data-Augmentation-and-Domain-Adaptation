@@ -13,7 +13,7 @@ from sklearn.manifold import TSNE
 from models.resnet import ResNetClassifier
 from models.dann_synth import DANNSynth
 from models.cdan_synth import CDANSynth
-from models.wgan import Generator
+from models.sngan_128 import SNGenerator as Generator   # SNGAN 128 PG+BG: generatore SNGAN
 from dataset.loader import setup_dataset, get_dataloaders
 from utils.seed import set_seed
 from config import (
@@ -41,7 +41,7 @@ DANN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128
 CDAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/DomainAdaptationCDAN/cdan_synth_checkpoints/best_CDAN_Synth.pth"
 
 # Path pesi GAN (per generare le sintetiche on-the-fly)
-GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/sngan_checkpoints/G_epoch_220.pth"
+GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128_snganG/sngan_checkpoints/G_epoch_220.pth"
 
 GEN_D = 128
 NUM_SAMPLES_PER_CLASS = 500  # 500 Real Normal, 500 Real Pneumonia, 500 Fake Normal

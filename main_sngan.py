@@ -20,7 +20,7 @@ from config import (
     SNGAN_SYNTH_DIR, SNGAN_AUG_DIR
 )
 from dataset.loader import setup_dataset, get_dataloaders, get_gan_dataloader
-from models.sngan import SNGenerator, SNCritic
+from models.sngan_128 import SNGenerator, SNCritic   # SNGAN 128 Complete: generatore SNGAN + critic PatchGAN
 from train import train_resnet, train_sngan
 from eval import evaluate_on_test, generate_synthetic_images, plot_comparison
 from utils.seed import set_seed
@@ -110,6 +110,7 @@ def main():
         save_every=SNGAN_SAVE_EVERY,
         drive_dir=GAN_DRIVE_DIR,
         drive_backup_every=GAN_DRIVE_BACKUP_EVERY,
+        use_bagan=True,   # Complete: bilanciamento BAGAN attivo (Standard = False)
     )
 
 
