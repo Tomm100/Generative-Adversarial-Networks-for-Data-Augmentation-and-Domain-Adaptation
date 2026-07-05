@@ -77,7 +77,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     
-    checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128_snganG/sngan_checkpoints/'
+    checkpoints_dir = '/content/drive/MyDrive/ProgettoMLVM/results_new_SNGAN_pg_bg_128/sngan_checkpoints/'
 
     wandb.init(
         project="gan-chest-xray-augmentation",

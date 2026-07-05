@@ -23,8 +23,8 @@ import matplotlib.pyplot as plt
 # ── 3. SNGAN 128 con PatchGAN + BAGAN ──
 # Generatore SNGAN (models.sngan_128.SNGenerator), coerente con la variante Standard e con la SNGAN 256.
 from models.sngan_128 import SNGenerator as Generator
-DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128_snganG/sngan_checkpoints/G_epoch_XXX.pth"
-WANDB_RUN_NAME = "Ablation_Study_SNGAN_Pg_Bg_128"
+DUMMY_GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_new_SNGAN_Pg_Bg_128/sngan_checkpoints/G_epoch_XXX.pth"
+WANDB_RUN_NAME = "new_Ablation_Study_SNGAN_Pg_Bg_128"
 GEN_D = 128  # SNGAN_D dalla config
 #
 # ── 4. SNGAN 128 senza PatchGAN e senza BAGAN ──
