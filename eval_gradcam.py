@@ -45,11 +45,24 @@ RESNET_CKPT = os.path.join(CHECKPOINTS_DIR, "best_model_Finale.pth")
 BASELINE_CKPT = os.path.join(CHECKPOINTS_DIR, "best_model_Baseline.pth")
 
 N_PER_GROUP = 6                 # quante immagini per categoria (analisi per-gruppo)
-N_COMPARE_PER_GROUP = 1         # righe per gruppo nella griglia baseline vs augmented (1 -> 3 righe)
+N_COMPARE_PER_GROUP = 4         # campioni (righe) PER GRUPPO nella griglia baseline vs augmented
+                                #   3 gruppi x 4 -> fino a 12 righe (se i sintetici sono presenti)
 OUT_DIR     = os.path.join(METRICS_DIR, "gradcam")
 CLASS_NAMES = ["NORMAL", "PNEUMONIA"]   # ImageFolder ordina alfabeticamente -> N=0, P=1
 GROUP_TRUE  = {"real_normal": 0, "real_pneumonia": 1, "synth_normal": 0}   # classe vera per gruppo
 BORDER_FRAC = 0.15              # spessore cornice (frazione del lato) per la metrica "border energy"
+
+# --- Immagini SINTETICHE ------------------------------------------------------
+# Lo script NON genera: LEGGE i sintetici da questa cartella (deve contenere i .png).
+# Default = dove main_dann_synth.py li genera (SYNTHETIC_DIR/NORMAL). Se le tue
+# stanno altrove (cartella del ResNet 75%, o su Drive), metti qui il path assoluto:
+SYNTH_NORMAL_DIR = os.path.join(SYNTHETIC_DIR, "NORMAL")
+
+# Fallback opzionale: se SYNTH_NORMAL_DIR e vuota e questo flag e True, genera
+# N sintetici NORMAL dal generatore indicato (stesso della pipeline, epoca 210).
+GENERATE_IF_MISSING = False
+GAN_GENERATOR_CKPT  = ""        # es: ".../results_SNGAN_pg_bg_128_snganG/sngan_checkpoints/G_epoch_210.pth"
+N_SYNTH_TO_GENERATE = 30
 # ==============================================================================
 
 
@@ -135,6 +148,39 @@ def list_images(folder, n, seed):
     return files[:n]
 
 
+def count_images(folder):
+    exts = (".png", ".jpg", ".jpeg", ".bmp", ".JPG", ".JPEG", ".PNG")
+    if not os.path.isdir(folder):
+        return 0
+    return sum(1 for f in os.listdir(folder) if f.endswith(exts))
+
+
+def maybe_generate_synth(device):
+    """Se abilitato e la cartella dei sintetici e vuota, genera N immagini NORMAL
+    dal generatore GAN (stessa procedura di main_dann_synth.py STEP 0)."""
+    if count_images(SYNTH_NORMAL_DIR) > 0 or not GENERATE_IF_MISSING:
+        return
+    if not GAN_GENERATOR_CKPT or not os.path.isfile(GAN_GENERATOR_CKPT):
+        print(f"  [!] GENERATE_IF_MISSING=True ma GAN_GENERATOR_CKPT non valido: '{GAN_GENERATOR_CKPT}'")
+        return
+    try:
+        from config import GAN_NZ, GAN_N_CLASS, GAN_NC, GAN_D
+        from eval import generate_synthetic_images
+        from models.sngan_128 import SNGenerator as Generator
+        print(f"  Genero {N_SYNTH_TO_GENERATE} sintetici NORMAL da {GAN_GENERATOR_CKPT} ...")
+        G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GAN_D).to(device)
+        G.load_state_dict(torch.load(GAN_GENERATOR_CKPT, map_location=device))
+        # generate_synthetic_images crea la sottocartella NORMAL dentro syn_dir
+        generate_synthetic_images(
+            G, num_gen_normal=N_SYNTH_TO_GENERATE, num_gen_pneumonia=0,
+            nz=GAN_NZ, n_class=GAN_N_CLASS, device=device,
+            syn_dir=os.path.dirname(SYNTH_NORMAL_DIR),
+        )
+        print(f"  Sintetici generati in: {SYNTH_NORMAL_DIR}")
+    except Exception as e:
+        print(f"  [!] Generazione fallita ({type(e).__name__}: {e}). Salto il gruppo sintetico.")
+
+
 def load_model(ckpt_path, device):
     model = ResNetClassifier(num_classes=RESNET_NUM_CLASSES)
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
@@ -150,7 +196,7 @@ def build_comparison_grid(items, gc_baseline, gc_aug, transform, device, img_siz
         print("  [!] Nessuna immagine per la griglia di confronto, salto.")
         return
     nrows = len(items)
-    fig, axes = plt.subplots(nrows, 2, figsize=(6.4, 3.1 * nrows))
+    fig, axes = plt.subplots(nrows, 2, figsize=(6.6, 2.9 * nrows))
     if nrows == 1:
         axes = axes.reshape(1, 2)
 
@@ -243,11 +289,14 @@ def main():
         print("[ERRORE] setup_dataset non riuscito."); return
     _, _, test_dir = res
 
+    maybe_generate_synth(device)   # genera i sintetici solo se abilitato e mancanti
+
     groups = {
         "real_normal":    os.path.join(test_dir, "NORMAL"),
         "real_pneumonia": os.path.join(test_dir, "PNEUMONIA"),
-        "synth_normal":   os.path.join(SYNTHETIC_DIR, "NORMAL"),
+        "synth_normal":   SYNTH_NORMAL_DIR,
     }
+    print(f"  Sintetici letti da: {SYNTH_NORMAL_DIR}  ({count_images(SYNTH_NORMAL_DIR)} immagini)")
 
     transform = build_transform(RESNET_IMG_SIZE)
     summary = []
@@ -264,9 +313,17 @@ def main():
         gc_base = GradCAM(model_base, model_base.backbone.layer4)
 
         compare_items = []
+        per_group_count = {}
         for name, folder in groups.items():
-            for f in list_images(folder, N_COMPARE_PER_GROUP, SEED + 1):
+            picked = list_images(folder, N_COMPARE_PER_GROUP, SEED + 1)
+            per_group_count[name] = len(picked)
+            for f in picked:
                 compare_items.append((f, name, GROUP_TRUE[name]))
+
+        print(f"      Righe griglia per gruppo: {per_group_count}  (totale {len(compare_items)})")
+        for name, c in per_group_count.items():
+            if c == 0:
+                print(f"      [!] '{name}' ha 0 immagini: la sua riga NON comparira nella griglia.")
 
         build_comparison_grid(compare_items, gc_base, gradcam,
                               transform, device, RESNET_IMG_SIZE, OUT_DIR)
