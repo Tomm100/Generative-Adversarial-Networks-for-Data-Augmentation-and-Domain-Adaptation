@@ -29,12 +29,19 @@ def train_dann_synth(
     lr_classifier=1e-3,
     beta1=0.5,
     alpha_synth=0.5,
+    lambda_max=1.0,
     tag="DANN_Synth",
     checkpoints_dir="./results/dann_synth_checkpoints",
     val_loader=None,
     class_names=None
 ):
-    """Training loop DANN Synth->Real (Supervised Domain Adaptation)."""
+    """Training loop DANN Synth->Real (Supervised Domain Adaptation).
+
+    lambda_max: moltiplicatore dello schedule GRL.
+        - 0.0 -> lambda resta 0 per tutto il training: NESSUN allineamento
+          avversariale (controllo = augmentation pura).
+        - 1.0 -> schedule di Ganin 0->1: DANN attiva (trattamento).
+    """
     os.makedirs(checkpoints_dir, exist_ok=True)
     model = model.to(device)
 
@@ -69,6 +76,7 @@ def train_dann_synth(
     print(f"  LR Feature Extractor: {lr_feature}")
     print(f"  LR Classificatori:    {lr_classifier}")
     print(f"  Alpha synth:          {alpha_synth}")
+    print(f"  Lambda max (GRL):     {lambda_max}  {'(CONTROLLO: DANN spenta)' if lambda_max == 0 else '(DANN attiva)'}")
     print(f"  Batch/dominio: {source_loader.batch_size}  |  n_batches/epoch: {n_batches}")
     print(f"{'='*60}\n")
 
@@ -93,7 +101,7 @@ def train_dann_synth(
 
         for batch_idx in pbar:
             p = (epoch * n_batches + batch_idx) / total_steps
-            lambda_p = compute_lambda_p(p)
+            lambda_p = lambda_max * compute_lambda_p(p)
 
             x_real, y_real = next(source_iter)
             x_fake, y_fake = next(target_iter)
@@ -146,7 +154,7 @@ def train_dann_synth(
         avg_cls_fake = epoch_loss_class_fake / n_batches
         avg_dom      = epoch_loss_domain / n_batches
         avg_tot      = epoch_loss_total  / n_batches
-        final_lambda = compute_lambda_p((epoch + 1) / epochs)
+        final_lambda = lambda_max * compute_lambda_p((epoch + 1) / epochs)
         domain_acc   = epoch_domain_correct / epoch_domain_total if epoch_domain_total > 0 else 0.0
 
         history['loss_class_real'].append(avg_cls_real)

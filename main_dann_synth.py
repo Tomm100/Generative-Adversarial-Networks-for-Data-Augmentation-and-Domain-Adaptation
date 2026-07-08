@@ -25,7 +25,7 @@ from utils.seed import set_seed
 # ==============================================================================
 
 
-GAN_EPOCH_TO_USE = 220
+GAN_EPOCH_TO_USE = 210
 
 
 # 1. WGAN-GP 128 con PatchGAN + BAGAN
@@ -66,7 +66,7 @@ GAN_WEIGHTS_PATH = os.path.join(GAN_CKPT_DIR_GAN, f"G_epoch_{GAN_EPOCH_TO_USE}.p
 # CONFIGURAZIONE GENERALE
 # ==============================================================================
 
-SYNTH_GAP_PERCENT = 100
+SYNTH_GAP_PERCENT = 75
 
 NUM_SYNTHETIC_NORMAL = 0
 
@@ -76,7 +76,7 @@ DANN_LR_FEAT     = 1e-4
 DANN_LR_CLASS    = 1e-3
 DANN_BETA1       = 0.5
 DANN_BATCH       = 32
-DANN_ALPHA_SYNTH = 0.5
+DANN_ALPHA_SYNTH = 1.0
 
 
 DANN_CKPT_DIR = "./results/dann_synth_checkpoints"
@@ -172,52 +172,93 @@ def main():
     )
 
 
+    # ==========================================================================
+    #  STEP 2-3: DUE run a parita di tutto (init ImageNet, stessi dati, stesso
+    #  seed). L'UNICA differenza e lambda_max:
+    #     lambda_max = 0.0  -> CONTROLLO  (augmentation, DANN spenta)
+    #     lambda_max = 1.0  -> TRATTAMENTO (DANN attiva, lambda 0->1)
+    #  Il delta tra i due isola l'effetto dell'allineamento avversariale.
+    # ==========================================================================
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    RUNS = [(0.0, "DANN_ctrl_lam0"), (1.0, "DANN_adv_lam1")]
+    results = {}
+    histories = {}
+
+    for lam_max, run_tag in RUNS:
+        print(f"\n{'#'*60}")
+        print(f"  RUN: {run_tag}   (lambda_max = {lam_max})")
+        print(f"{'#'*60}")
+
+        set_seed(SEED)                                     # stessa init/ordine loader
+        model = DANNSynth(num_classes=2, pretrained=True)  # cold-start ImageNet
+
+        model, history, ckpt_path = train_dann_synth(
+            model=model,
+            source_loader=source_loader,
+            target_loader=target_loader,
+            device=device,
+            epochs=DANN_EPOCHS,
+            lr_feature=DANN_LR_FEAT,
+            lr_classifier=DANN_LR_CLASS,
+            beta1=DANN_BETA1,
+            alpha_synth=DANN_ALPHA_SYNTH,
+            lambda_max=lam_max,
+            tag=run_tag,
+            checkpoints_dir=DANN_CKPT_DIR,
+            val_loader=val_loader,
+            class_names=class_names
+        )
+
+        report, _ = evaluate_dann_synth(
+            model=model,
+            ckpt_path=ckpt_path,
+            test_loader=test_loader,
+            class_names=class_names,
+            device=device,
+            tag=run_tag,
+            out_dir=METRICS_DIR
+        )
+        results[run_tag] = report
+        histories[run_tag] = history
+
+    # ---- Figura: Val Macro F1, lambda e domain-acc vs epoca (run DANN) --------
+    h = histories["DANN_adv_lam1"]
+    ep = range(1, len(h['val_macro_f1']) + 1)
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    ax1.plot(ep, h['val_macro_f1'], 'b-o', ms=3, label='Val Macro F1')
+    ax1.plot(ep, h['lambda_p'],     'g--',       label='lambda')
+    ax1.set_xlabel('Epoch'); ax1.set_ylabel('Val Macro F1 / lambda')
+    ax1.set_ylim(0, 1.02)
+    ax2 = ax1.twinx()
+    ax2.plot(ep, h['domain_acc'], 'r-s', ms=3, label='Domain-disc acc')
+    ax2.set_ylabel('Domain-disc accuracy'); ax2.set_ylim(0.4, 1.02)
+    ax1.legend(loc='lower left'); ax2.legend(loc='lower right')
+    plt.title('DANN (lambda 0->1): F1 e domain accuracy vs epoca')
+    plt.tight_layout()
+    fig_path = os.path.join(METRICS_DIR, 'dann_lambda_dynamics.png')
+    plt.savefig(fig_path, dpi=150); plt.close(fig)
+    wandb.log({"DANN_lambda_dynamics": wandb.Image(fig_path)})
+
+    # ---- Tabella di confronto finale (test reale) ----------------------------
     print(f"\n{'='*60}")
-    print(f"  STEP 2: Training DANN Synth->Real")
+    print(f"  CONFRONTO  controllo (lam=0)  vs  DANN (lam->1)  -- Test REALE")
     print(f"{'='*60}")
+    print(f"  {'Config':<18}{'N F1':>8}{'P F1':>8}{'MacroF1':>9}{'N recall':>10}")
+    for _, run_tag in RUNS:
+        r = results[run_tag]
+        print(f"  {run_tag:<18}"
+              f"{r[class_names[0]]['f1-score']:>8.3f}"
+              f"{r[class_names[1]]['f1-score']:>8.3f}"
+              f"{r['macro avg']['f1-score']:>9.3f}"
+              f"{r[class_names[0]]['recall']:>10.3f}")
 
-    model = DANNSynth(num_classes=2, pretrained=True)
-    model, history, ckpt_path = train_dann_synth(
-        model=model,
-        source_loader=source_loader,
-        target_loader=target_loader,
-        device=device,
-        epochs=DANN_EPOCHS,
-        lr_feature=DANN_LR_FEAT,
-        lr_classifier=DANN_LR_CLASS,
-        beta1=DANN_BETA1,
-        alpha_synth=DANN_ALPHA_SYNTH,
-        tag="DANN_Synth",
-        checkpoints_dir=DANN_CKPT_DIR,
-        val_loader=val_loader,
-        class_names=class_names
-    )
-
-
-    print(f"\n{'='*60}")
-    print(f"  STEP 3: Valutazione DANN -- Test Set REALE")
-    print(f"{'='*60}")
-
-    report_dann, cm_dann = evaluate_dann_synth(
-        model=model,
-        ckpt_path=ckpt_path,
-        test_loader=test_loader,
-        class_names=class_names,
-        device=device,
-        tag="DANN_Synth",
-        out_dir=METRICS_DIR
-    )
-
-
-    print(f"\n{'='*60}")
-    print(f"  RISULTATI DANN Synth->Real")
-    print(f"{'='*60}")
-    for cls in class_names:
-        for metric in ['precision', 'recall', 'f1-score']:
-            v = report_dann[cls][metric]
-            print(f"  {cls} {metric:12s}: {v:.4f}")
-    print(f"\n  Overall Accuracy: {report_dann['accuracy']:.4f}")
-    print(f"\n  Checkpoint DANN: {ckpt_path}")
+    delta = (results['DANN_adv_lam1']['macro avg']['f1-score']
+             - results['DANN_ctrl_lam0']['macro avg']['f1-score'])
+    print(f"\n  Delta Macro F1 (DANN - controllo): {delta:+.3f}")
+    print(f"  Figura dinamiche lambda: {fig_path}")
     print(f"  Pipeline DANN Synth->Real completata!")
 
     wandb.finish()
