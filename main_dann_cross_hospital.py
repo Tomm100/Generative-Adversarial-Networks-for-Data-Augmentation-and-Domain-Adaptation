@@ -30,8 +30,9 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from sklearn.metrics import classification_report, average_precision_score
 from tqdm import tqdm
+from PIL import Image
 
-from config import DATASET_DIR, RESNET_IMG_SIZE, METRICS_DIR, SEED
+from config import DATASET_DIR, RESNET_IMG_SIZE, METRICS_DIR, SEED, SYNTHETIC_DIR
 from models.dann_synth import DANNSynth
 from utils.seed import set_seed
 
@@ -40,6 +41,14 @@ from utils.seed import set_seed
 # ==============================================================================
 SOURCE_ROOT = DATASET_DIR                       # Kermany (train/val/test dentro)
 TARGET_ROOT = "./VinDr_Target_DA_Ready"         # VinDr scompattato (train/val/test)
+
+# --- SOURCE augmentato con i sintetici della BestGAN ---
+#   AUGMENT_SOURCE=True -> il TRAIN del source = Kermany reale + sintetici NORMAL
+#                          (val/test restano reali). False -> source solo reale.
+AUGMENT_SOURCE    = True
+BEST_GAN_CKPT     = "./results/gan_checkpoints/G_epoch_210.pth"   # <- generatore BestGAN (SNGAN128 Complete, ep.210)
+SYNTH_GAP_PERCENT = 75                           # % del gap Normal/Pneumonia da colmare
+GEN_D             = 128                           # base channels del generatore
 
 EPOCHS     = 30
 LR_FEAT    = 1e-4
@@ -72,6 +81,72 @@ def make_loaders(root, img_size, batch, balanced_train):
     va_loader = DataLoader(va, batch, shuffle=False, num_workers=2, pin_memory=True)
     te_loader = DataLoader(te, batch, shuffle=False, num_workers=2, pin_memory=True)
     print(f"  {root}: train {len(tr)} | val {len(va)} | test {len(te)} | classi {tr.classes}")
+    return tr_loader, va_loader, te_loader
+
+
+class _SynthNormalDS(torch.utils.data.Dataset):
+    """Immagini sintetiche NORMAL (etichetta 0)."""
+    def __init__(self, syn_dir, transform):
+        exts = (".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG")
+        self.files = [os.path.join(syn_dir, f) for f in os.listdir(syn_dir) if f.endswith(exts)]
+        self.transform = transform
+    def __len__(self):
+        return len(self.files)
+    def __getitem__(self, i):
+        return self.transform(Image.open(self.files[i]).convert("RGB")), 0
+
+
+def _num_synth_from_gap():
+    tr = os.path.join(SOURCE_ROOT, "train")
+    n_norm = len(os.listdir(os.path.join(tr, "NORMAL")))
+    n_pneu = len(os.listdir(os.path.join(tr, "PNEUMONIA")))
+    return int((n_pneu - n_norm) * SYNTH_GAP_PERCENT / 100.0), n_norm, n_pneu
+
+
+def _ensure_synthetic(device):
+    """Genera i sintetici NORMAL dalla BestGAN se non gia' presenti in SYNTHETIC_DIR/NORMAL."""
+    normal_dir = os.path.join(SYNTHETIC_DIR, "NORMAL")
+    num_synth, n_norm, n_pneu = _num_synth_from_gap()
+    have = len(os.listdir(normal_dir)) if os.path.isdir(normal_dir) else 0
+    print(f"  Gap Normal/Pneumonia nel train: {n_pneu - n_norm}  ->  {SYNTH_GAP_PERCENT}% = {num_synth} sintetici NORMAL")
+    if have >= num_synth:
+        print(f"  Sintetici gia' presenti ({have}). Skip generazione.")
+        return
+    from config import GAN_NZ, GAN_N_CLASS, GAN_NC
+    from eval import generate_synthetic_images
+    from models.sngan_128 import SNGenerator as Generator
+    print(f"  Genero {num_synth} sintetici NORMAL da {BEST_GAN_CKPT} ...")
+    G = Generator(nz=GAN_NZ, n_class=GAN_N_CLASS, nc=GAN_NC, d=GEN_D).to(device)
+    G.load_state_dict(torch.load(BEST_GAN_CKPT, map_location=device))
+    generate_synthetic_images(G, num_gen_normal=num_synth, num_gen_pneumonia=0,
+                              nz=GAN_NZ, n_class=GAN_N_CLASS, device=device, syn_dir=SYNTHETIC_DIR)
+
+
+def get_source_loaders(device):
+    """Source = Kermany. Se AUGMENT_SOURCE, il TRAIN include i sintetici NORMAL
+    (val/test restano SEMPRE reali)."""
+    tf = transforms.Compose([
+        transforms.Resize((RESNET_IMG_SIZE, RESNET_IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    real_train = datasets.ImageFolder(os.path.join(SOURCE_ROOT, "train"), tf)
+    va = datasets.ImageFolder(os.path.join(SOURCE_ROOT, "val"),  tf)
+    te = datasets.ImageFolder(os.path.join(SOURCE_ROOT, "test"), tf)
+
+    if AUGMENT_SOURCE:
+        _ensure_synthetic(device)
+        synth = _SynthNormalDS(os.path.join(SYNTHETIC_DIR, "NORMAL"), tf)
+        train_ds = torch.utils.data.ConcatDataset([real_train, synth])
+        print(f"  Source AUGMENTATO: {len(real_train)} reali + {len(synth)} sintetici NORMAL = {len(train_ds)}")
+    else:
+        train_ds = real_train
+        print(f"  Source REALE: {len(real_train)}")
+
+    dl = dict(num_workers=2, pin_memory=True)
+    tr_loader = DataLoader(train_ds, BATCH, shuffle=True, drop_last=True, **dl)
+    va_loader = DataLoader(va, BATCH, shuffle=False, **dl)
+    te_loader = DataLoader(te, BATCH, shuffle=False, **dl)
     return tr_loader, va_loader, te_loader
 
 
@@ -163,7 +238,7 @@ def main():
     print(f"\n{'='*60}\n  Cross-Hospital DANN  (device: {device})\n{'='*60}")
 
     print("Source (Kermany):")
-    src_train, _, src_test = make_loaders(SOURCE_ROOT, RESNET_IMG_SIZE, BATCH, balanced_train=True)
+    src_train, _, src_test = get_source_loaders(device)
     print("Target (VinDr):")
     tgt_train, tgt_val, tgt_test = make_loaders(TARGET_ROOT, RESNET_IMG_SIZE, BATCH, balanced_train=False)
 
