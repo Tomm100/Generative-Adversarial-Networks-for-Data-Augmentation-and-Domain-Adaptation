@@ -36,7 +36,7 @@ RESNET_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_1
 DANN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128/DomainAdaptation/dann_synth_checkpoints/best_DANN_Synth.pth"
 
 # Path pesi GAN (per generare le sintetiche on-the-fly)
-GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_SNGAN_pg_bg_128_snganG/sngan_checkpoints/G_epoch_220.pth"
+GAN_WEIGHTS_PATH = "/content/drive/MyDrive/ProgettoMLVM/results_new_SNGAN_Pg_Bg_128/sngan_checkpoints/G_epoch_210.pth"
 
 GEN_D = 128
 NUM_SAMPLES_PER_CLASS = 500  # 500 Real Normal, 500 Real Pneumonia, 500 Fake Normal
