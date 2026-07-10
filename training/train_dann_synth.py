@@ -1,0 +1,291 @@
+"""Training loop per DANN Synthetic Domain Adaptation (Synth->Real)."""
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import os
+import time
+import wandb
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
+from tqdm import tqdm
+
+from config import METRICS_DIR
+
+
+def compute_lambda_p(p):
+    """Scheduling dinamico di lambda (Ganin et al., 2016)."""
+    return float(2.0 / (1.0 + np.exp(-10.0 * p)) - 1.0)
+
+
+def train_dann_synth(
+    model, source_loader, target_loader, device,
+    epochs=50,
+    lr_feature=1e-4,
+    lr_classifier=1e-3,
+    beta1=0.5,
+    alpha_synth=0.5,
+    lambda_max=1.0,
+    tag="DANN_Synth",
+    checkpoints_dir="./results/dann_synth_checkpoints",
+    val_loader=None,
+    class_names=None
+):
+    """Training loop DANN Synth->Real (Supervised Domain Adaptation).
+
+    lambda_max: moltiplicatore dello schedule GRL.
+        - 0.0 -> lambda resta 0 per tutto il training: NESSUN allineamento
+          avversariale (controllo = augmentation pura).
+        - 1.0 -> schedule di Ganin 0->1: DANN attiva (trattamento).
+    """
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    model = model.to(device)
+
+    feat_params = [p for p in model.feature_extractor.parameters() if p.requires_grad]
+    optimizer = optim.Adam([
+        {'params': feat_params,                                'lr': lr_feature},
+        {'params': model.label_predictor.parameters(),         'lr': lr_classifier},
+        {'params': model.domain_discriminator.parameters(),    'lr': lr_classifier},
+    ], betas=(beta1, 0.999))
+
+    criterion_class  = nn.CrossEntropyLoss()
+    criterion_domain = nn.BCEWithLogitsLoss()
+
+    ckpt_path = os.path.join(checkpoints_dir, f'best_{tag}.pth')
+    best_val_f1 = -1.0
+    best_weights = None
+
+    history = {
+        'loss_class_real': [], 'loss_class_fake': [], 'loss_class': [],
+        'loss_domain': [], 'loss_total': [],
+        'lambda_p': [], 'domain_acc': [],
+        'val_acc': [], 'val_macro_f1': []
+    }
+
+    n_batches = min(len(source_loader), len(target_loader))
+    total_steps = epochs * n_batches
+
+    print(f"\n{'='*60}")
+    print(f"  DANN Synth->Real Training (Supervised DA) -- {epochs} epoche")
+    print(f"  Source (reali): {len(source_loader.dataset)} img")
+    print(f"  Target (synth): {len(target_loader.dataset)} img")
+    print(f"  LR Feature Extractor: {lr_feature}")
+    print(f"  LR Classificatori:    {lr_classifier}")
+    print(f"  Alpha synth:          {alpha_synth}")
+    print(f"  Lambda max (GRL):     {lambda_max}  {'(CONTROLLO: DANN spenta)' if lambda_max == 0 else '(DANN attiva)'}")
+    print(f"  Batch/dominio: {source_loader.batch_size}  |  n_batches/epoch: {n_batches}")
+    print(f"{'='*60}\n")
+
+    start_time = time.time()
+
+    for epoch in range(epochs):
+        model.train()
+        epoch_loss_class  = 0.0
+        epoch_loss_domain = 0.0
+        epoch_loss_total  = 0.0
+
+        source_iter = iter(source_loader)
+        target_iter = iter(target_loader)
+
+        pbar = tqdm(range(n_batches),
+                    desc=f"  Epoch {epoch+1}/{epochs}", leave=False)
+
+        epoch_loss_class_real = 0.0
+        epoch_loss_class_fake = 0.0
+        epoch_domain_correct  = 0
+        epoch_domain_total    = 0
+
+        for batch_idx in pbar:
+            p = (epoch * n_batches + batch_idx) / total_steps
+            lambda_p = lambda_max * compute_lambda_p(p)
+
+            x_real, y_real = next(source_iter)
+            x_fake, y_fake = next(target_iter)
+
+            x_real, y_real = x_real.to(device), y_real.to(device)
+            x_fake, y_fake = x_fake.to(device),  y_fake.to(device)
+
+            d_real = torch.zeros(x_real.size(0), 1, device=device)
+            d_fake = torch.ones(x_fake.size(0),  1, device=device)
+
+            class_out_real, domain_out_real, _ = model(x_real, lambda_p)
+            class_out_fake, domain_out_fake, _ = model(x_fake, lambda_p)
+
+            loss_class_real = criterion_class(class_out_real, y_real)
+            loss_class_fake = criterion_class(class_out_fake, y_fake)
+            loss_class = loss_class_real + alpha_synth * loss_class_fake
+
+            loss_domain = (
+                criterion_domain(domain_out_real, d_real) +
+                criterion_domain(domain_out_fake, d_fake)
+            )
+
+            loss_total = loss_class + loss_domain
+
+            optimizer.zero_grad()
+            loss_total.backward()
+            optimizer.step()
+
+            epoch_loss_class  += loss_class.item()
+            epoch_loss_domain += loss_domain.item()
+            epoch_loss_total  += loss_total.item()
+            epoch_loss_class_real += loss_class_real.item()
+            epoch_loss_class_fake += loss_class_fake.item()
+
+            with torch.no_grad():
+                d_pred_real = (torch.sigmoid(domain_out_real) < 0.5).sum().item()
+                d_pred_fake = (torch.sigmoid(domain_out_fake) >= 0.5).sum().item()
+                epoch_domain_correct += d_pred_real + d_pred_fake
+                epoch_domain_total   += x_real.size(0) + x_fake.size(0)
+
+            pbar.set_postfix({
+                'cls_r': f"{loss_class_real.item():.3f}",
+                'cls_s': f"{loss_class_fake.item():.3f}",
+                'dom':   f"{loss_domain.item():.3f}",
+                'lam':   f"{lambda_p:.3f}"
+            })
+
+        avg_cls      = epoch_loss_class  / n_batches
+        avg_cls_real = epoch_loss_class_real / n_batches
+        avg_cls_fake = epoch_loss_class_fake / n_batches
+        avg_dom      = epoch_loss_domain / n_batches
+        avg_tot      = epoch_loss_total  / n_batches
+        final_lambda = lambda_max * compute_lambda_p((epoch + 1) / epochs)
+        domain_acc   = epoch_domain_correct / epoch_domain_total if epoch_domain_total > 0 else 0.0
+
+        history['loss_class_real'].append(avg_cls_real)
+        history['loss_class_fake'].append(avg_cls_fake)
+        history['loss_class'].append(avg_cls)
+        history['loss_domain'].append(avg_dom)
+        history['loss_total'].append(avg_tot)
+        history['lambda_p'].append(final_lambda)
+        history['domain_acc'].append(domain_acc)
+
+        val_acc, val_f1 = 0.0, 0.0
+        if val_loader is not None:
+            val_acc, val_f1 = _quick_eval(model, val_loader, device)
+
+        history['val_acc'].append(val_acc)
+        history['val_macro_f1'].append(val_f1)
+
+        wandb.log({
+            f"{tag}/loss_class":        avg_cls,
+            f"{tag}/loss_class_real":   avg_cls_real,
+            f"{tag}/loss_class_fake":   avg_cls_fake,
+            f"{tag}/loss_domain":       avg_dom,
+            f"{tag}/loss_total":        avg_tot,
+            f"{tag}/lambda_p":          final_lambda,
+            f"{tag}/domain_disc_acc":   domain_acc,
+            f"{tag}/val_acc":           val_acc,
+            f"{tag}/val_macro_f1":      val_f1,
+            f"{tag}/epoch":             epoch + 1,
+        })
+
+        saved = ""
+        if val_f1 > best_val_f1:
+            best_val_f1 = val_f1
+            best_weights = {k: v.clone() for k, v in model.state_dict().items()}
+            saved = " <- best"
+
+        elapsed = (time.time() - start_time) / 60
+        eta = (elapsed / (epoch + 1)) * (epochs - epoch - 1)
+        print(f"  Epoch {epoch+1}/{epochs} | "
+              f"CLS_r: {avg_cls_real:.4f} | CLS_s: {avg_cls_fake:.4f} | "
+              f"DOM: {avg_dom:.4f} | D_acc: {domain_acc:.2f} | "
+              f"lam: {final_lambda:.3f} | "
+              f"ValAcc: {val_acc:.2f}% | ValF1: {val_f1:.4f}{saved} | "
+              f"{elapsed:.1f}m (ETA: {eta:.1f}m)")
+
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
+        torch.save(best_weights, ckpt_path)
+    else:
+        best_weights = {k: v.clone() for k, v in model.state_dict().items()}
+        torch.save(best_weights, ckpt_path)
+        print("  Nessun val loader: salvato stato finale.")
+
+    print(f"\n  Best Val Macro F1: {best_val_f1:.4f}")
+    print(f"  Checkpoint: {ckpt_path}")
+
+    return model, history, ckpt_path
+
+
+def _quick_eval(model, loader, device):
+    """Valutazione rapida (Accuracy + Macro F1) con lambda=0."""
+    model.eval()
+    all_preds, all_labels = [], []
+
+    with torch.no_grad():
+        for x, y in loader:
+            x = x.to(device)
+            class_out, _, _ = model(x, lambda_=0.0)
+            _, pred = torch.max(class_out, 1)
+            all_preds.extend(pred.cpu().numpy())
+            all_labels.extend(y.numpy())
+
+    model.train()
+    correct = sum(p == l for p, l in zip(all_preds, all_labels))
+    acc = 100.0 * correct / len(all_labels)
+    f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
+    return acc, f1
+
+
+def evaluate_dann_synth(model, ckpt_path, test_loader, class_names, device,
+                        tag="DANN_Synth", out_dir=None):
+    """Valutazione completa sul test set reale con i best weights."""
+    if out_dir is None:
+        out_dir = METRICS_DIR
+    os.makedirs(out_dir, exist_ok=True)
+
+    model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    model = model.to(device).eval()
+
+    all_preds, all_labels = [], []
+    with torch.no_grad():
+        for x, y in test_loader:
+            x = x.to(device)
+            class_out, _, _ = model(x, lambda_=0.0)
+            _, pred = torch.max(class_out, 1)
+            all_preds.extend(pred.cpu().numpy())
+            all_labels.extend(y.numpy())
+
+    print(f"\n{'='*60}")
+    print(f"  RISULTATI {tag} -- Test Set REALE")
+    print(f"{'='*60}")
+
+    report_dict = classification_report(
+        all_labels, all_preds, target_names=class_names, output_dict=True)
+    report_str  = classification_report(
+        all_labels, all_preds, target_names=class_names)
+    print(report_str)
+
+    report_path = os.path.join(out_dir, f'report_{tag}.txt')
+    with open(report_path, 'w') as f:
+        f.write(f"RISULTATI {tag} -- Test Set REALE\n{'='*60}\n{report_str}")
+
+    cm = confusion_matrix(all_labels, all_preds)
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=class_names, yticklabels=class_names, ax=ax)
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('True')
+    ax.set_title(f'Confusion Matrix -- {tag}')
+    plt.tight_layout()
+    cm_path = os.path.join(out_dir, f'cm_{tag}.png')
+    plt.savefig(cm_path, dpi=150)
+    plt.close(fig)
+
+    wandb.log({
+        f"{tag}/Confusion_Matrix":    wandb.Image(cm_path),
+        f"{tag}_Test/Accuracy":       report_dict["accuracy"],
+        f"{tag}_Test/Macro_F1":       report_dict["macro avg"]["f1-score"],
+        f"{tag}_Test/NORMAL_F1":      report_dict[class_names[0]]["f1-score"],
+        f"{tag}_Test/NORMAL_Recall":  report_dict[class_names[0]]["recall"],
+        f"{tag}_Test/PNEUMONIA_F1":   report_dict[class_names[1]]["f1-score"],
+    })
+
+    return report_dict, cm
