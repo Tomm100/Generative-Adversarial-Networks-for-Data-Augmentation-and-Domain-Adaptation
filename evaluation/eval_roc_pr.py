@@ -48,6 +48,9 @@ FINALE_LABEL = "SNGAN 128 PG+BG — 75%"
 
 OUT_DIR = os.path.join(RESULTS_DIR, "roc_pr_analysis")
 
+# Colore dei titoli dei grafici (blu chiaro delle slide)
+TITLE_COLOR = "#2196F3"
+
 
 # FUNZIONI DI ANALISI
 
@@ -117,8 +120,8 @@ def plot_roc_comparison(roc_baseline, roc_final, class_names, out_dir):
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
     for ax, fpr, tpr, roc_auc, title in [
-        (axes[0], fpr_b, tpr_b, auc_b, "Baseline (Dataset Sbilanciato)"),
-        (axes[1], fpr_f, tpr_f, auc_f, f"Finale ({FINALE_LABEL})")
+        (axes[0], fpr_b, tpr_b, auc_b, "Baseline (Imbalanced Dataset)"),
+        (axes[1], fpr_f, tpr_f, auc_f, f"Final ({FINALE_LABEL})")
     ]:
         for i in range(n_classes):
             ax.plot(fpr[i], tpr[i], color=colors[i], lw=2,
@@ -132,11 +135,11 @@ def plot_roc_comparison(roc_baseline, roc_final, class_names, out_dir):
         ax.set_ylim([0.0, 1.05])
         ax.set_xlabel('False Positive Rate', fontsize=12)
         ax.set_ylabel('True Positive Rate', fontsize=12)
-        ax.set_title(title, fontsize=13, fontweight='bold')
+        ax.set_title(title, fontsize=13, fontweight='bold', color=TITLE_COLOR)
         ax.legend(loc='lower right', fontsize=10)
         ax.grid(True, alpha=0.3)
 
-    plt.suptitle('ROC Curve — Confronto Baseline vs Finale', fontsize=15, fontweight='bold')
+    plt.suptitle('ROC Curve — Baseline vs Final', fontsize=15, fontweight='bold', color=TITLE_COLOR)
     plt.tight_layout()
     path = os.path.join(out_dir, 'roc_comparison.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -154,8 +157,8 @@ def plot_pr_comparison(pr_baseline, pr_final, class_names, out_dir):
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
     for ax, prec, rec, ap, title in [
-        (axes[0], prec_b, rec_b, ap_b, "Baseline (Dataset Sbilanciato)"),
-        (axes[1], prec_f, rec_f, ap_f, f"Finale ({FINALE_LABEL})")
+        (axes[0], prec_b, rec_b, ap_b, "Baseline (Imbalanced Dataset)"),
+        (axes[1], prec_f, rec_f, ap_f, f"Final ({FINALE_LABEL})")
     ]:
         for i in range(n_classes):
             ax.plot(rec[i], prec[i], color=colors[i], lw=2,
@@ -166,11 +169,11 @@ def plot_pr_comparison(pr_baseline, pr_final, class_names, out_dir):
         ax.set_ylim([0.0, 1.05])
         ax.set_xlabel('Recall', fontsize=12)
         ax.set_ylabel('Precision', fontsize=12)
-        ax.set_title(title, fontsize=13, fontweight='bold')
+        ax.set_title(title, fontsize=13, fontweight='bold', color=TITLE_COLOR)
         ax.legend(loc='lower left', fontsize=10)
         ax.grid(True, alpha=0.3)
 
-    plt.suptitle('Precision-Recall Curve — Confronto Baseline vs Finale', fontsize=15, fontweight='bold')
+    plt.suptitle('Precision-Recall Curve — Baseline vs Final', fontsize=15, fontweight='bold', color=TITLE_COLOR)
     plt.tight_layout()
     path = os.path.join(out_dir, 'pr_comparison.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -193,7 +196,7 @@ def plot_roc_overlay(roc_baseline, roc_final, class_names, out_dir):
         ax.plot(fpr_f[i], tpr_f[i], color='#66BB6A', lw=2,
                 label=f'Finale (AUC = {auc_f[i]:.4f})')
         ax.plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.4)
-        ax.set_title(f'{class_names[i]}', fontsize=13, fontweight='bold')
+        ax.set_title(f'{class_names[i]}', fontsize=13, fontweight='bold', color=TITLE_COLOR)
         ax.set_xlabel('FPR', fontsize=11)
         ax.set_ylabel('TPR', fontsize=11)
         ax.legend(fontsize=9)
@@ -206,13 +209,13 @@ def plot_roc_overlay(roc_baseline, roc_final, class_names, out_dir):
     ax.plot(fpr_f["macro"], tpr_f["macro"], color='#66BB6A', lw=2, linestyle='--',
             label=f'Finale Macro (AUC = {auc_f["macro"]:.4f})')
     ax.plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.4)
-    ax.set_title('Macro-Average', fontsize=13, fontweight='bold')
+    ax.set_title('Macro-Average', fontsize=13, fontweight='bold', color=TITLE_COLOR)
     ax.set_xlabel('FPR', fontsize=11)
     ax.set_ylabel('TPR', fontsize=11)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    plt.suptitle('ROC Overlay — Baseline vs Finale (per classe)', fontsize=15, fontweight='bold')
+    plt.suptitle('ROC Overlay — Baseline vs Final (per class)', fontsize=15, fontweight='bold', color=TITLE_COLOR)
     plt.tight_layout()
     path = os.path.join(out_dir, 'roc_overlay.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -234,7 +237,7 @@ def plot_pr_overlay(pr_baseline, pr_final, class_names, out_dir):
                 label=f'Baseline (AP = {ap_b[i]:.4f})')
         ax.plot(rec_f[i], prec_f[i], color='#66BB6A', lw=2,
                 label=f'Finale (AP = {ap_f[i]:.4f})')
-        ax.set_title(f'{class_names[i]}', fontsize=13, fontweight='bold')
+        ax.set_title(f'{class_names[i]}', fontsize=13, fontweight='bold', color=TITLE_COLOR)
         ax.set_xlabel('Recall', fontsize=11)
         ax.set_ylabel('Precision', fontsize=11)
         ax.legend(fontsize=9)
@@ -253,10 +256,10 @@ def plot_pr_overlay(pr_baseline, pr_final, class_names, out_dir):
     ax.text(0.5, 0.2, f'Δ = {arrow} {abs(diff):.4f}',
             ha='center', va='center', fontsize=13, fontweight='bold',
             transform=ax.transAxes)
-    ax.set_title('Macro Average Precision', fontsize=13, fontweight='bold')
+    ax.set_title('Macro Average Precision', fontsize=13, fontweight='bold', color=TITLE_COLOR)
     ax.axis('off')
 
-    plt.suptitle('Precision-Recall Overlay — Baseline vs Finale (per classe)', fontsize=15, fontweight='bold')
+    plt.suptitle('Precision-Recall Overlay — Baseline vs Final (per class)', fontsize=15, fontweight='bold', color=TITLE_COLOR)
     plt.tight_layout()
     path = os.path.join(out_dir, 'pr_overlay.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -308,13 +311,13 @@ def plot_roc_with_thresholds(y_true, y_prob, class_names, out_dir, tag,
         ax.set_ylim([0.0, 1.05])
         ax.set_xlabel('False Positive Rate', fontsize=12)
         ax.set_ylabel('True Positive Rate', fontsize=12)
-        ax.set_title(f'{class_names[i]} — soglie sulla curva ROC',
-                     fontsize=13, fontweight='bold')
+        ax.set_title(f'{class_names[i]} — ROC Curve with Thresholds',
+                     fontsize=13, fontweight='bold', color=TITLE_COLOR)
         ax.legend(loc='lower right', fontsize=10)
         ax.grid(True, alpha=0.3)
 
-    plt.suptitle(f'ROC con soglie del classificatore — {tag}',
-                 fontsize=15, fontweight='bold')
+    plt.suptitle(f'ROC with Classifier Thresholds — {tag}',
+                 fontsize=15, fontweight='bold', color=TITLE_COLOR)
     plt.tight_layout()
     path = os.path.join(out_dir, f'roc_thresholds_{tag}.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
