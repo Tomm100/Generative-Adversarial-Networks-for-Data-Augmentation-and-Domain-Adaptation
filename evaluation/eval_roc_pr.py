@@ -265,7 +265,7 @@ def plot_pr_overlay(pr_baseline, pr_final, class_names, out_dir):
 
 
 def plot_roc_with_thresholds(y_true, y_prob, class_names, out_dir, tag,
-                             annot_thresholds=(0.1, 0.3, 0.5, 0.7, 0.9)):
+                             annot_thresholds=(0.5,)):
     """ROC per-classe con le SOGLIE del classificatore annotate sui punti curva.
 
     Ogni punto della curva ROC corrisponde a una soglia di decisione: qui le
@@ -290,15 +290,19 @@ def plot_roc_with_thresholds(y_true, y_prob, class_names, out_dir, tag,
                 label=f'{class_names[i]}')
         ax.plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.4, label='Caso casuale')
 
+        pos = (y_bin == 1)
+        neg = (y_bin == 0)
         for t in annot_thresholds:
-            idx = int(np.argmin(np.abs(thr - t)))   # punto con soglia piu' vicina a t
-            f, r, real_t = fpr[idx], tpr[idx], thr[idx]
+            # FPR/TPR ESATTI alla soglia t (soglia manuale, non il punto piu' vicino)
+            pred_pos = y_prob[:, i] >= t
+            r = float((pred_pos & pos).sum()) / max(int(pos.sum()), 1)   # TPR esatto
+            f = float((pred_pos & neg).sum()) / max(int(neg.sum()), 1)   # FPR esatto
             ax.scatter(f, r, s=60, color='black', zorder=5)
-            ax.annotate(f'thr={real_t:.2f}\n(FPR={f:.2f}, TPR={r:.2f})',
+            ax.annotate(f'thr={t:.2f}\n(FPR={f:.2f}, TPR={r:.2f})',
                         (f, r), textcoords="offset points", xytext=(12, -12),
                         fontsize=8,
                         arrowprops=dict(arrowstyle='->', lw=0.6, alpha=0.5))
-            table_rows.append([class_names[i], real_t, f, r])
+            table_rows.append([class_names[i], t, f, r])
 
         ax.set_xlim([-0.02, 1.0])
         ax.set_ylim([0.0, 1.05])
