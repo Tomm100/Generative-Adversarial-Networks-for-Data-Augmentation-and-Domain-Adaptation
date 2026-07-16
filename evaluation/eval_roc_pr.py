@@ -264,6 +264,66 @@ def plot_pr_overlay(pr_baseline, pr_final, class_names, out_dir):
     return path
 
 
+def plot_roc_with_thresholds(y_true, y_prob, class_names, out_dir, tag,
+                             annot_thresholds=(0.1, 0.3, 0.5, 0.7, 0.9)):
+    """ROC per-classe con le SOGLIE del classificatore annotate sui punti curva.
+
+    Ogni punto della curva ROC corrisponde a una soglia di decisione: qui le
+    rendiamo esplicite marcando, per ogni soglia richiesta, il punto della curva
+    la cui soglia reale e' piu' vicina. Stampa anche una tabella (soglia,FPR,TPR).
+    """
+    n_classes = len(class_names)
+    colors = ['#2196F3', '#FF5722', '#4CAF50']
+    fig, axes = plt.subplots(1, n_classes, figsize=(8 * n_classes, 7))
+    if n_classes == 1:
+        axes = [axes]
+
+    table_rows = []  # (classe, soglia_reale, FPR, TPR)
+
+    for i in range(n_classes):
+        ax = axes[i]
+        y_bin = (y_true == i).astype(int)
+        # terzo valore = SOGLIE (prima scartato con "_")
+        fpr, tpr, thr = roc_curve(y_bin, y_prob[:, i])
+
+        ax.plot(fpr, tpr, color=colors[i % len(colors)], lw=2,
+                label=f'{class_names[i]}')
+        ax.plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.4, label='Caso casuale')
+
+        for t in annot_thresholds:
+            idx = int(np.argmin(np.abs(thr - t)))   # punto con soglia piu' vicina a t
+            f, r, real_t = fpr[idx], tpr[idx], thr[idx]
+            ax.scatter(f, r, s=60, color='black', zorder=5)
+            ax.annotate(f'thr={real_t:.2f}\n(FPR={f:.2f}, TPR={r:.2f})',
+                        (f, r), textcoords="offset points", xytext=(12, -12),
+                        fontsize=8,
+                        arrowprops=dict(arrowstyle='->', lw=0.6, alpha=0.5))
+            table_rows.append([class_names[i], real_t, f, r])
+
+        ax.set_xlim([-0.02, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel('False Positive Rate', fontsize=12)
+        ax.set_ylabel('True Positive Rate', fontsize=12)
+        ax.set_title(f'{class_names[i]} — soglie sulla curva ROC',
+                     fontsize=13, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+    plt.suptitle(f'ROC con soglie del classificatore — {tag}',
+                 fontsize=15, fontweight='bold')
+    plt.tight_layout()
+    path = os.path.join(out_dir, f'roc_thresholds_{tag}.png')
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+    print(f"\n  [{tag}] Soglie del classificatore sulla curva ROC:")
+    print(f"  {'Classe':<12} {'soglia':>8} {'FPR':>8} {'TPR':>8}")
+    for name, real_t, f, r in table_rows:
+        print(f"  {name:<12} {real_t:>8.3f} {f:>8.3f} {r:>8.3f}")
+
+    return path
+
+
 def build_summary_table(roc_b, roc_f, pr_b, pr_f, class_names):
     """Costruisce una tabella wandb di riepilogo."""
     _, _, auc_b = roc_b
@@ -408,6 +468,12 @@ def main():
     roc_over_path = plot_roc_overlay(roc_b, roc_f, class_names, OUT_DIR)
     pr_over_path  = plot_pr_overlay(pr_b, pr_f, class_names, OUT_DIR)
 
+    # ── ROC con le soglie del classificatore annotate ──
+    roc_thr_b_path = plot_roc_with_thresholds(
+        y_true_b, y_prob_b, class_names, OUT_DIR, "Baseline")
+    roc_thr_f_path = plot_roc_with_thresholds(
+        y_true_f, y_prob_f, class_names, OUT_DIR, "Finale")
+
     # ── Stampa riepilogo ──
     _, _, auc_b = roc_b
     _, _, auc_f = roc_f
@@ -445,6 +511,8 @@ def main():
         "ROC_PR/PR_Comparison":   wandb.Image(pr_comp_path),
         "ROC_PR/ROC_Overlay":     wandb.Image(roc_over_path),
         "ROC_PR/PR_Overlay":      wandb.Image(pr_over_path),
+        "ROC_PR/ROC_Thresholds_Baseline": wandb.Image(roc_thr_b_path),
+        "ROC_PR/ROC_Thresholds_Finale":   wandb.Image(roc_thr_f_path),
         "ROC_PR/Summary_Table":   summary_table,
         "ROC_PR/Baseline_Macro_AUC":  auc_b["macro"],
         "ROC_PR/Finale_Macro_AUC":    auc_f["macro"],
